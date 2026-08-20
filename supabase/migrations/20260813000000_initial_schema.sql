@@ -289,5 +289,5 @@ CREATE POLICY "team_members_delete_leader_or_self"
 -- End of Day 2 migration.
 -- Next migration (Day 11): submissions table, 1:1 with teams, RLS scoped to
 -- the owning team only. Evaluations table follows later still, once the
--- Judge Portal work actually starts (blocked on Aman's event-timeline date).
+-- Judge Portal work actually starts (blocked on event-timeline date).
 -- ============================================================================
