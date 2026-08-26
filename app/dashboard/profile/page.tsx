@@ -12,40 +12,128 @@ import {
   Save,
   User,
   Code2,
+  ChevronDown,
 } from "lucide-react";
-import { FormEvent, useState } from "react";
+import { FormEvent, useEffect, useState } from "react";
+import { createClient } from "@/utils/supabase/client";
+
+const yearOptions = [
+  "1st Year",
+  "2nd Year",
+  "3rd Year",
+  "4th Year",
+  "Postgraduate",
+  "Other",
+];
+
+const domainOptions = [
+  "Artificial Intelligence",
+  "Machine Learning",
+  "Data Science",
+  "Web Development",
+  "App Development",
+  "Cybersecurity",
+  "Cloud Computing",
+  "Blockchain / Web3",
+  "IoT",
+  "AR / VR",
+  "UI / UX Design",
+  "DevOps",
+  "Other",
+];
+
 
 export default function ProfilePage() {
   const [saved, setSaved] = useState(false);
+  const [errorMsg, setErrorMsg] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [userId, setUserId] = useState<string | null>(null);
 
   const [form, setForm] = useState({
-    fullName: "Aman Pathak",
-    email: "aman@example.com",
+    fullName: "",
+    email: "",
     mobile: "",
-    college: "Maharishi University of Information Technology",
-    course: "B.Tech",
-    year: "3rd Year",
-    domain: "Artificial Intelligence & Data Science",
-    city: "Noida",
+    college: "",
+    course: "",
+    year: "",
+    domain: "",
+    city: "",
     linkedin: "",
     github: "",
   });
+
+  const supabase = createClient();
+
+  useEffect(() => {
+    async function loadProfile() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) return;
+      setUserId(user.id);
+
+      const { data: profile } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", user.id)
+        .single();
+
+      if (profile) {
+        setForm({
+          fullName: profile.full_name || user.user_metadata?.full_name || "",
+          email: profile.email || user.email || "",
+          mobile: profile.mobile_number || "",
+          college: profile.college || "",
+          course: profile.course || "",
+          year: profile.year_of_study || "",
+          domain: "", // domain wasn't in profiles table, keep it blank or ignore
+          city: profile.city || "",
+          linkedin: profile.linkedin_url || "",
+          github: profile.github_url || "",
+        });
+      }
+      setLoading(false);
+    }
+    loadProfile();
+  }, []);
 
   function updateField(field: keyof typeof form, value: string) {
     setForm((previous) => ({
       ...previous,
       [field]: value,
     }));
-
     setSaved(false);
+    setErrorMsg("");
   }
 
-  function handleSubmit(event: FormEvent<HTMLFormElement>) {
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
+    if (!userId) return;
 
-    // Temporary frontend save.
-    // Supabase integration will be added after Anusha's database work.
-    setSaved(true);
+    if (!form.fullName || !form.email || !form.mobile || !form.city || !form.college || !form.course || !form.year || !form.domain) {
+      setErrorMsg("Please fill in all required fields marked with an asterisk (*).");
+      return;
+    }
+
+    const { error } = await supabase
+      .from("profiles")
+      .update({
+        full_name: form.fullName,
+        mobile_number: form.mobile,
+        college: form.college,
+        course: form.course,
+        year_of_study: form.year,
+        city: form.city,
+        linkedin_url: form.linkedin,
+        github_url: form.github,
+        profile_completed: true,
+        updated_at: new Date().toISOString(),
+      })
+      .eq("id", userId);
+
+    if (!error) {
+      setSaved(true);
+    } else {
+      console.error(error);
+    }
   }
 
   return (
@@ -198,6 +286,7 @@ export default function ProfilePage() {
                     updateField("fullName", value)
                   }
                   icon={<User size={15} />}
+                  required
                 />
 
                 <Input
@@ -208,6 +297,7 @@ export default function ProfilePage() {
                   }
                   icon={<Mail size={15} />}
                   disabled
+                  required
                 />
 
                 <Input
@@ -218,6 +308,7 @@ export default function ProfilePage() {
                   }
                   icon={<Phone size={15} />}
                   placeholder="+91 XXXXX XXXXX"
+                  required
                 />
 
                 <Input
@@ -227,6 +318,7 @@ export default function ProfilePage() {
                     updateField("city", value)
                   }
                   icon={<MapPin size={15} />}
+                  required
                 />
               </div>
 
@@ -256,6 +348,7 @@ export default function ProfilePage() {
                     updateField("college", value)
                   }
                   icon={<GraduationCap size={15} />}
+                  required
                 />
 
                 <Input
@@ -265,22 +358,29 @@ export default function ProfilePage() {
                     updateField("course", value)
                   }
                   icon={<GraduationCap size={15} />}
+                  required
                 />
 
-                <Input
+                <Select
                   label="Year of study"
                   value={form.year}
                   onChange={(value) =>
                     updateField("year", value)
                   }
+                  options={yearOptions}
+                  placeholder="Select year"
+                  required
                 />
 
-                <Input
+                <Select
                   label="Domain / Specialization"
                   value={form.domain}
                   onChange={(value) =>
                     updateField("domain", value)
                   }
+                  options={domainOptions}
+                  placeholder="Select your domain"
+                  required
                 />
               </div>
 
@@ -327,7 +427,12 @@ export default function ProfilePage() {
 
               {/* Save */}
               <div className="mt-10 flex flex-col-reverse justify-end gap-3 border-t border-white/[0.06] pt-6 sm:flex-row">
-                {saved && (
+                {errorMsg && (
+                  <div className="flex items-center justify-center gap-2 px-4 text-xs text-red-400 sm:mr-auto sm:justify-start">
+                    {errorMsg}
+                  </div>
+                )}
+                {!errorMsg && saved && (
                   <div className="flex items-center justify-center gap-2 px-4 text-xs text-emerald-400 sm:mr-auto sm:justify-start">
                     <CheckCircle2 size={15} />
                     Changes saved successfully
@@ -373,6 +478,51 @@ export default function ProfilePage() {
   );
 }
 
+function Select({
+  label,
+  value,
+  onChange,
+  options,
+  placeholder,
+  required = false,
+}: {
+  label: string;
+  value: string;
+  onChange: (value: string) => void;
+  options: string[];
+  placeholder: string;
+  required?: boolean;
+}) {
+  return (
+    <label className="block">
+      <span className="mb-2 flex items-center text-[10px] font-medium uppercase tracking-[0.12em] text-zinc-600">
+        {label}
+        {required && <span className="ml-1 text-violet-400">*</span>}
+      </span>
+
+      <div className="relative flex items-center gap-3 rounded-xl border border-white/[0.08] bg-black/20 px-3.5 transition focus-within:border-violet-400/30">
+        <select
+          value={value}
+          onChange={(event) => onChange(event.target.value)}
+          className="min-w-0 flex-1 appearance-none bg-transparent py-3.5 text-xs text-zinc-300 outline-none"
+        >
+          <option value="" disabled className="bg-zinc-900 text-zinc-300">
+            {placeholder}
+          </option>
+          {options.map((option) => (
+            <option key={option} value={option} className="bg-zinc-900 text-zinc-300">
+              {option}
+            </option>
+          ))}
+        </select>
+        <div className="pointer-events-none absolute right-4 text-zinc-700">
+          <ChevronDown size={14} />
+        </div>
+      </div>
+    </label>
+  );
+}
+
 /* =========================================================
    INPUT
 ========================================================= */
@@ -384,6 +534,7 @@ function Input({
   icon,
   placeholder,
   disabled = false,
+  required = false,
 }: {
   label: string;
   value: string;
@@ -391,11 +542,13 @@ function Input({
   icon?: React.ReactNode;
   placeholder?: string;
   disabled?: boolean;
+  required?: boolean;
 }) {
   return (
     <label className="block">
-      <span className="mb-2 block text-[10px] font-medium uppercase tracking-[0.12em] text-zinc-600">
+      <span className="mb-2 flex items-center text-[10px] font-medium uppercase tracking-[0.12em] text-zinc-600">
         {label}
+        {required && <span className="ml-1 text-violet-400">*</span>}
       </span>
 
       <div

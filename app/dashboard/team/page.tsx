@@ -1,5 +1,6 @@
 "use client";
 
+import { useRouter } from "next/navigation";
 import Link from "next/link";
 import {
   ArrowLeft,
@@ -15,7 +16,8 @@ import {
   Users,
   X,
 } from "lucide-react";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { createClient } from "@/utils/supabase/client";
 
 /* =========================================================
    TYPES
@@ -93,139 +95,346 @@ const initialRequests: Request[] = [
 ========================================================= */
 
 export default function TeamDashboardPage() {
-  const [members, setMembers] = useState<Member[]>(initialMembers);
-  const [requests, setRequests] =
-    useState<Request[]>(initialRequests);
+  const [members, setMembers] = useState<Member[]>([]);
+  const [requests, setRequests] = useState<Request[]>([]);
+  const [team, setTeam] = useState<{ id: string; name: string; code: string } | null>(null);
+  const [userId, setUserId] = useState<string | null>(null);
+  const [myMemberStatus, setMyMemberStatus] = useState<"accepted" | "pending" | null>(null);
+  const [loading, setLoading] = useState(true);
+  const router = useRouter();
 
   const [showInvite, setShowInvite] = useState(false);
   const [showJoin, setShowJoin] = useState(false);
   const [showCreate, setShowCreate] = useState(false);
   const [showLeave, setShowLeave] = useState(false);
+  const [showTransfer, setShowTransfer] = useState(false);
+  const [showDelete, setShowDelete] = useState(false);
 
   const [inviteEmail, setInviteEmail] = useState("");
   const [teamCode, setTeamCode] = useState("");
   const [newTeamName, setNewTeamName] = useState("");
 
   const maxMembers = 5;
-  const acceptedMembers = members.filter(
-    (member) => member.status === "accepted"
-  );
+  const acceptedMembers = members.filter((member) => member.status === "accepted");
+  const isLeader = members.some((m) => m.id.toString() === userId && m.isLeader);
+  const supabase = createClient();
 
-  /* =======================================================
-     COPY TEAM CODE
-  ======================================================= */
+  useEffect(() => {
+    async function loadTeam() {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+        setUserId(user.id);
+
+        const { data: profileData } = await supabase
+          .from("profiles")
+          .select("profile_completed")
+          .eq("id", user.id)
+          .single();
+        
+        if (profileData && profileData.profile_completed === false) {
+          router.push("/dashboard/profile");
+          return;
+        }
+
+        // Fetch user's team membership
+        const { data: myMember } = await supabase
+          .from("team_members")
+          .select("team_id, status")
+          .eq("profile_id", user.id)
+          .single();
+
+        if (myMember && myMember.team_id) {
+          setMyMemberStatus(myMember.status as "accepted" | "pending");
+          // Fetch team details
+          const { data: teamData } = await supabase
+            .from("teams")
+            .select("*")
+            .eq("id", myMember.team_id)
+            .single();
+
+          if (teamData) {
+            setTeam({ id: teamData.id, name: teamData.name, code: teamData.team_code });
+
+            // Fetch all members
+            const { data: allMembers } = await supabase
+              .from("team_members")
+              .select(`
+                profile_id,
+                is_leader,
+                status,
+                profiles (
+                  full_name,
+                  email
+                )
+              `)
+              .eq("team_id", teamData.id);
+
+            if (allMembers) {
+              const mappedMembers = allMembers.map((m: any) => ({
+                  id: m.profile_id,
+                  name: m.profiles?.full_name || "Unknown User",
+                  email: m.profiles?.email || "",
+                  role: m.status === 'pending' ? 'Pending Request' : (m.is_leader ? "Team Leader" : "Team Member"),
+                  initials: (m.profiles?.full_name || "Un").substring(0, 2).toUpperCase(),
+                  isLeader: m.is_leader,
+                  status: m.status,
+                }));
+              setMembers(mappedMembers);
+
+              const mappedRequests = allMembers
+                .filter((m: any) => m.status === 'pending')
+                .map((m: any) => ({
+                  id: m.profile_id,
+                  name: m.profiles?.full_name || "Unknown User",
+                  email: m.profiles?.email || "",
+                  initials: (m.profiles?.full_name || "Un").substring(0, 2).toUpperCase(),
+                }));
+              setRequests(mappedRequests);
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Error loading team data:", err);
+      } finally {
+        setLoading(false);
+      }
+    }
+    loadTeam();
+  }, []);
 
   const copyTeamCode = async () => {
+    if (!team) return;
     try {
-      await navigator.clipboard.writeText("VX7K29");
-    } catch {
-      // Clipboard may be blocked in some browsers.
-    }
+      await navigator.clipboard.writeText(team.code);
+    } catch {}
   };
 
-  /* =======================================================
-     INVITE
-  ======================================================= */
+  const sendInvite = async () => {
+    if (!inviteEmail.trim() || !team) return;
 
-  const sendInvite = () => {
-    if (!inviteEmail.trim()) return;
+    try {
+      const res = await fetch("/api/emails", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          type: "team_invite",
+          email: inviteEmail,
+          data: {
+            teamName: team.name,
+            teamCode: team.code,
+            inviterName: "Your teammate",
+          },
+        }),
+      });
 
-    alert(`Invitation sent to ${inviteEmail}`);
+      if (res.ok) {
+        alert(`Invite sent successfully to ${inviteEmail}!`);
+      } else {
+        const err = await res.json();
+        alert(`Failed to send invite: ${err.error}`);
+      }
+    } catch (e: any) {
+      alert(`Error sending invite: ${e.message}`);
+    }
 
     setInviteEmail("");
     setShowInvite(false);
   };
 
-  /* =======================================================
-     ACCEPT REQUEST
-  ======================================================= */
-
-  const acceptRequest = (request: Request) => {
+  const acceptRequest = async (request: Request) => {
+    if (!team) return;
     if (acceptedMembers.length >= maxMembers) {
-      alert("Your team has reached the maximum member limit.");
+      alert("Team is full.");
       return;
     }
-
-    const newMember: Member = {
-      id: request.id,
-      name: request.name,
-      email: request.email,
-      role: "Team Member",
-      initials: request.initials,
-      status: "accepted",
-    };
-
-    setMembers((current) => [...current, newMember]);
-
-    setRequests((current) =>
-      current.filter((item) => item.id !== request.id)
-    );
+    const { error } = await supabase
+      .from("team_members")
+      .update({ status: "accepted" })
+      .eq("team_id", team.id)
+      .eq("profile_id", request.id);
+    
+    if (!error) {
+      // Notify the accepted member
+      await supabase.from("notifications").insert({
+        profile_id: request.id,
+        message: `Your request to join ${team.name} was accepted!`,
+      });
+      window.location.reload();
+    }
   };
 
-  /* =======================================================
-     REJECT REQUEST
-  ======================================================= */
-
-  const rejectRequest = (requestId: number) => {
-    setRequests((current) =>
-      current.filter((item) => item.id !== requestId)
-    );
+  const rejectRequest = async (requestId: number | string) => {
+    if (!team) return;
+    const { error } = await supabase
+      .from("team_members")
+      .delete()
+      .eq("team_id", team.id)
+      .eq("profile_id", requestId);
+    if (!error) {
+      setRequests(current => current.filter(r => r.id.toString() !== requestId.toString()));
+    }
   };
 
-  /* =======================================================
-     REMOVE MEMBER
-  ======================================================= */
-
-  const removeMember = (memberId: number) => {
-    const member = members.find(
-      (item) => item.id === memberId
-    );
-
-    if (!member || member.isLeader) return;
-
-    const confirmed = window.confirm(
-      `Remove ${member.name} from the team?`
-    );
-
+  const removeMember = async (memberId: number | string) => {
+    if (!team) return;
+    const confirmed = window.confirm("Remove this member?");
     if (!confirmed) return;
-
-    setMembers((current) =>
-      current.filter((item) => item.id !== memberId)
-    );
+    const { error } = await supabase
+      .from("team_members")
+      .delete()
+      .eq("team_id", team.id)
+      .eq("profile_id", memberId);
+    if (!error) {
+      setMembers(current => current.filter(m => m.id.toString() !== memberId.toString()));
+    }
   };
 
-  /* =======================================================
-     CREATE TEAM
-  ======================================================= */
+  const createTeam = async () => {
+    if (!newTeamName.trim() || !userId) return;
+    
+    // Check if user already in team
+    if (team) return;
 
-  const createTeam = () => {
-    if (!newTeamName.trim()) return;
+    const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+    
+    const { data: eventData, error: eventError } = await supabase
+      .from("events")
+      .select("id")
+      .eq("is_active", true)
+      .single();
+      
+    if (eventError || !eventData) {
+      throw new Error("Could not find an active event to register the team under.");
+    }
 
-    alert(
-      `Team "${newTeamName}" will be created when Supabase is connected.`
-    );
+    const { data: newTeam, error } = await supabase
+      .from("teams")
+      .insert({
+        name: newTeamName,
+        team_code: code,
+        created_by: userId,
+        max_members: maxMembers,
+        event_id: eventData.id
+      })
+      .select()
+      .single();
+
+    if (!error && newTeam) {
+      // Add creator as the accepted team leader
+      await supabase.from("team_members").insert({
+        team_id: newTeam.id,
+        profile_id: userId,
+        status: "accepted",
+        is_leader: true,
+      });
+      window.location.reload();
+    } else {
+      throw new Error("SUPABASE ERROR DETAILS: " + JSON.stringify(error, null, 2));
+    }
 
     setNewTeamName("");
     setShowCreate(false);
   };
 
-  /* =======================================================
-     JOIN TEAM
-  ======================================================= */
-
-  const joinTeam = () => {
-    if (teamCode.trim().length !== 6) {
+  const joinTeam = async () => {
+    if (teamCode.trim().length !== 6 || !userId) {
       alert("Please enter a valid 6-character team code.");
       return;
     }
 
-    alert(
-      `Join request for ${teamCode.toUpperCase()} will be sent when Supabase is connected.`
-    );
+    // Use the RPC to look up the team — direct table query is blocked by RLS for regular users
+    const { data: targetTeamRows, error: searchError } = await supabase
+      .rpc("get_team_by_code", {
+        p_team_code: teamCode.toUpperCase(),
+      });
+
+
+
+    const targetTeam = Array.isArray(targetTeamRows) ? targetTeamRows[0] : targetTeamRows;
+
+    if (searchError || !targetTeam) {
+      alert("Invalid team code. Error: " + (searchError?.message ?? "Team not found"));
+      return;
+    }
+
+    const { error } = await supabase
+      .from("team_members")
+      .insert({
+        team_id: (targetTeam as { id: string }).id,
+        profile_id: userId,
+        status: "pending",
+        is_leader: false
+      });
+
+    if (!error) {
+      // Fetch leader and notify
+      const { data: leaderId } = await supabase.rpc("get_team_leader", {
+        p_team_id: (targetTeam as { id: string }).id
+      });
+      if (leaderId) {
+        // Find my name
+        const { data: profile } = await supabase.from("profiles").select("full_name").eq("id", userId).single();
+        const myName = profile?.full_name || "Someone";
+        
+        await supabase.from("notifications").insert({
+          profile_id: leaderId,
+          message: `${myName} requested to join your team.`,
+        });
+      }
+
+      alert("Join request sent! The team leader will approve your request.");
+    } else {
+      alert("Error sending join request. You might already be in a team or have a pending request.");
+    }
 
     setTeamCode("");
     setShowJoin(false);
   };
+
+  const transferLeadership = async (newLeaderId: string) => {
+    if (!team) return;
+    const { error } = await supabase.rpc('transfer_team_leadership', {
+      p_team_id: team.id,
+      p_new_leader_id: newLeaderId
+    });
+    if (!error) {
+      window.location.reload();
+    } else {
+      alert(error.message);
+    }
+  };
+
+  const handleLeaveTeam = async () => {
+    if (!team || !userId) return;
+    const { error } = await supabase
+      .from("team_members")
+      .delete()
+      .eq("team_id", team.id)
+      .eq("profile_id", userId);
+    
+    if (!error) {
+      window.location.reload();
+    }
+  };
+
+  const handleDeleteTeam = async () => {
+    if (!team || !userId) return;
+    const { error } = await supabase
+      .from("teams")
+      .delete()
+      .eq("id", team.id);
+    
+    if (!error) {
+      window.location.reload();
+    } else {
+      alert("Error deleting team: " + error.message);
+    }
+  };
+
+  if (loading) {
+    return <main className="min-h-screen bg-[#050505] flex items-center justify-center text-white">Loading...</main>;
+  }
 
   return (
     <main className="min-h-screen bg-[#050505] text-white">
@@ -270,6 +479,29 @@ export default function TeamDashboardPage() {
             CONTENT
         =================================================== */}
 
+        {myMemberStatus === "pending" && team ? (
+          <div className="mx-auto flex max-w-[1200px] flex-col items-center justify-center px-4 py-20 text-center sm:px-6 lg:px-10 lg:py-32">
+            <div className="mb-6 flex h-16 w-16 items-center justify-center rounded-full bg-amber-400/10 text-amber-400">
+              <span className="h-4 w-4 rounded-full bg-amber-400" />
+            </div>
+
+            <h1 className="text-2xl font-bold tracking-tight sm:text-3xl">
+              Request Pending
+            </h1>
+
+            <p className="mt-4 max-w-md text-sm leading-6 text-zinc-400">
+              Your request to join <strong className="text-white">{team.name}</strong> has been sent to the team leader. You will be able to access the team workspace once they approve your request.
+            </p>
+
+            <button
+              type="button"
+              onClick={handleLeaveTeam}
+              className="mt-8 rounded-xl border border-white/10 bg-white/[0.03] px-6 py-3 text-sm font-medium text-zinc-300 transition hover:bg-white/[0.08]"
+            >
+              Cancel Request
+            </button>
+          </div>
+        ) : (
         <div className="mx-auto max-w-[1200px] px-4 py-8 sm:px-6 lg:px-10 lg:py-10">
           {/* =================================================
               PAGE HEADER
@@ -286,7 +518,7 @@ export default function TeamDashboardPage() {
                 </div>
 
                 <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">
-                  Team Vector
+                  {team ? team.name : "Your Team"}
                 </h1>
 
                 <p className="mt-3 max-w-2xl text-sm leading-6 text-zinc-600">
@@ -330,7 +562,7 @@ export default function TeamDashboardPage() {
                   </div>
 
                   <div className="mt-2 font-mono text-2xl font-bold tracking-[0.18em] text-violet-300">
-                    VX7K29
+                    {team ? team.code : "------"}
                   </div>
                 </div>
 
@@ -433,24 +665,33 @@ export default function TeamDashboardPage() {
                         {member.role}
                       </div>
 
-                      <div className="mt-1 flex items-center justify-end gap-1.5 text-[9px] text-emerald-400">
-                        <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
-                        Accepted
-                      </div>
+                      {member.status === "accepted" ? (
+                        <div className="mt-1 flex items-center justify-end gap-1.5 text-[9px] text-emerald-400">
+                          <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+                          Accepted
+                        </div>
+                      ) : (
+                        <div className="mt-1 flex items-center justify-end gap-1.5 text-[9px] text-amber-400">
+                          <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+                          Pending
+                        </div>
+                      )}
                     </div>
 
-                    {!member.isLeader && (
-                      <button
-                        type="button"
-                        onClick={() =>
-                          removeMember(member.id)
-                        }
-                        className="flex h-9 w-9 items-center justify-center rounded-lg text-zinc-700 opacity-0 transition hover:bg-red-400/10 hover:text-red-400 group-hover:opacity-100"
-                        title="Remove member"
-                      >
-                        <Trash2 size={15} />
-                      </button>
-                    )}
+                    <div className="w-9 h-9 shrink-0 flex items-center justify-end">
+                      {isLeader && !member.isLeader && (
+                        <button
+                          type="button"
+                          onClick={() =>
+                            removeMember(member.id)
+                          }
+                          className="flex h-9 w-9 items-center justify-center rounded-lg text-zinc-700 opacity-0 transition hover:bg-red-400/10 hover:text-red-400 group-hover:opacity-100"
+                          title="Remove member"
+                        >
+                          <Trash2 size={15} />
+                        </button>
+                      )}
+                    </div>
                   </div>
                 ))}
               </div>
@@ -491,7 +732,7 @@ export default function TeamDashboardPage() {
 
             <div className="space-y-6">
               {/* JOIN REQUESTS */}
-
+              {isLeader && (
               <DashboardCard>
                 <SectionHeading
                   icon={<Mail size={16} />}
@@ -558,6 +799,7 @@ export default function TeamDashboardPage() {
                   )}
                 </div>
               </DashboardCard>
+              )}
 
               {/* LEADERSHIP */}
 
@@ -571,11 +813,11 @@ export default function TeamDashboardPage() {
 
                 <div className="mt-6 rounded-2xl border border-violet-400/10 bg-violet-400/[0.025] p-4">
                   <div className="flex items-center gap-3">
-                    <Avatar initials="AP" small />
+                    <Avatar initials={members.find((m) => m.isLeader)?.initials || "??"} small />
 
                     <div>
                       <div className="text-xs font-medium text-zinc-300">
-                        Aman Pathak
+                        {members.find((m) => m.isLeader)?.name || "Unknown"}
                       </div>
 
                       <div className="mt-1 text-[9px] text-violet-400">
@@ -584,19 +826,16 @@ export default function TeamDashboardPage() {
                     </div>
                   </div>
                 </div>
-
+                {isLeader && members.filter(m => !m.isLeader && m.status === 'accepted').length > 0 && (
                 <button
                   type="button"
-                  onClick={() =>
-                    alert(
-                      "Leadership transfer will be connected to Supabase later."
-                    )
-                  }
+                  onClick={() => setShowTransfer(true)}
                   className="mt-3 flex w-full items-center justify-between rounded-xl border border-white/[0.07] px-4 py-3 text-xs text-zinc-600 transition hover:border-white/[0.12] hover:text-zinc-300"
                 >
                   Transfer leadership
                   <ChevronRight size={14} />
                 </button>
+                )}
               </DashboardCard>
 
               {/* LEAVE TEAM */}
@@ -611,17 +850,28 @@ export default function TeamDashboardPage() {
                 </div>
 
                 <p className="mt-3 text-[10px] leading-5 text-zinc-700">
-                  Leaving a team will remove you from its
-                  participant group.
+                  {isLeader 
+                    ? "Deleting the team will permanently remove it and all its members."
+                    : "Leaving a team will remove you from its participant group."}
                 </p>
 
-                <button
-                  type="button"
-                  onClick={() => setShowLeave(true)}
-                  className="mt-4 w-full rounded-xl border border-red-400/15 px-4 py-2.5 text-xs font-medium text-red-400 transition hover:bg-red-400/10"
-                >
-                  Leave Team
-                </button>
+                {isLeader ? (
+                  <button
+                    type="button"
+                    onClick={() => setShowDelete(true)}
+                    className="mt-4 w-full rounded-xl border border-red-400/15 px-4 py-2.5 text-xs font-medium text-red-400 transition hover:bg-red-400/10"
+                  >
+                    Delete Team
+                  </button>
+                ) : (
+                  <button
+                    type="button"
+                    onClick={() => setShowLeave(true)}
+                    className="mt-4 w-full rounded-xl border border-red-400/15 px-4 py-2.5 text-xs font-medium text-red-400 transition hover:bg-red-400/10"
+                  >
+                    Leave Team
+                  </button>
+                )}
               </div>
             </div>
           </section>
@@ -661,6 +911,7 @@ export default function TeamDashboardPage() {
             </div>
           </footer>
         </div>
+        )}
       </div>
 
       {/* =====================================================
@@ -772,31 +1023,84 @@ export default function TeamDashboardPage() {
       )}
 
       {/* =====================================================
+          TRANSFER LEADERSHIP MODAL
+      ===================================================== */}
+
+      {showTransfer && (
+        <Modal
+          title="Transfer Leadership"
+          description="Select a team member to become the new team leader. This action cannot be undone."
+          onClose={() => setShowTransfer(false)}
+        >
+          <div className="space-y-2">
+            {members
+              .filter(m => !m.isLeader && m.status === 'accepted')
+              .map(member => (
+                <button
+                  key={member.id}
+                  type="button"
+                  onClick={() => {
+                    setShowTransfer(false);
+                    transferLeadership(member.id.toString());
+                  }}
+                  className="flex w-full items-center gap-3 rounded-xl border border-white/[0.07] px-4 py-3 text-left transition hover:border-violet-400/30 hover:bg-violet-400/[0.04]"
+                >
+                  <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-full bg-white/[0.06] text-xs font-semibold text-zinc-300">
+                    {member.initials}
+                  </div>
+                  <div>
+                    <div className="text-xs font-medium text-zinc-200">{member.name}</div>
+                    <div className="mt-0.5 text-[10px] text-zinc-600">{member.email}</div>
+                  </div>
+                  <ChevronRight size={14} className="ml-auto text-zinc-700" />
+                </button>
+              ))}
+          </div>
+        </Modal>
+      )}
+
+      {/* =====================================================
           LEAVE MODAL
       ===================================================== */}
 
       {showLeave && (
         <Modal
           title="Leave Team?"
-          description="Are you sure you want to leave Team Vector?"
+          description={`Are you sure you want to leave ${team?.name}?`}
           onClose={() => setShowLeave(false)}
         >
-          <div className="rounded-xl border border-red-400/10 bg-red-400/[0.04] p-4 text-xs leading-5 text-zinc-600">
-            As team leader, you may need to transfer
-            leadership before leaving the team.
-          </div>
-
           <button
             type="button"
             onClick={() => {
               setShowLeave(false);
-              alert(
-                "Leave-team logic will be connected to Supabase later."
-              );
+              handleLeaveTeam();
             }}
             className="mt-4 w-full rounded-xl bg-red-400 py-3 text-xs font-semibold text-black transition hover:bg-red-300"
           >
             Confirm
+          </button>
+        </Modal>
+      )}
+
+      {/* =====================================================
+          DELETE MODAL
+      ===================================================== */}
+
+      {showDelete && (
+        <Modal
+          title="Delete Team?"
+          description={`Are you sure you want to permanently delete ${team?.name}? This action cannot be undone and will remove all members.`}
+          onClose={() => setShowDelete(false)}
+        >
+          <button
+            type="button"
+            onClick={() => {
+              setShowDelete(false);
+              handleDeleteTeam();
+            }}
+            className="mt-4 w-full rounded-xl bg-red-400 py-3 text-xs font-semibold text-black transition hover:bg-red-300"
+          >
+            Confirm Delete
           </button>
         </Modal>
       )}

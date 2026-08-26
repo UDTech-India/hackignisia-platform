@@ -8,12 +8,15 @@ import {
   useMemo,
   useState,
 } from "react";
+import { useRouter } from "next/navigation";
+import { createClient } from "@/utils/supabase/client";
+import { Eye, EyeOff } from "lucide-react";
 
 /* =========================================================
    TYPES
 ========================================================= */
 
-type ParticipationType = "have-team" | "need-team" | "";
+type ParticipationType = "have-team" | "solo" | "";
 
 type TeamMode = "create" | "join" | "";
 
@@ -21,6 +24,7 @@ type FormData = {
   /* Profile */
   fullName: string;
   email: string;
+  password?: string;
   phone: string;
   city: string;
   state: string;
@@ -38,7 +42,6 @@ type FormData = {
   teamName: string;
   teamCode: string;
   teamMode: TeamMode;
-  lookingForTeam: boolean;
 
   /* Professional */
   github: string;
@@ -66,6 +69,7 @@ const DRAFT_KEY =
 const initialFormData: FormData = {
   fullName: "",
   email: "",
+  password: "",
   phone: "",
   city: "",
   state: "",
@@ -81,7 +85,6 @@ const initialFormData: FormData = {
   teamName: "",
   teamCode: "",
   teamMode: "",
-  lookingForTeam: false,
 
   github: "",
   linkedin: "",
@@ -213,6 +216,8 @@ function getSkillsCount(skills: string) {
 ========================================================= */
 
 export default function RegisterPage() {
+  const router = useRouter();
+  const supabase = createClient();
   const [step, setStep] = useState(1);
 
   const [participation, setParticipation] =
@@ -237,56 +242,84 @@ export default function RegisterPage() {
     useState(false);
 
   /* =====================================================
+     AUTH CHECK (REDIRECT IF LOGGED IN)
+  ===================================================== */
+
+
+
+  /* =====================================================
+     OAUTH
+  ===================================================== */
+
+  const handleGoogleLogin = async () => {
+    await supabase.auth.signInWithOAuth({
+      provider: "google",
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback`,
+      },
+    });
+  };
+
+  const handleGitHubLogin = async () => {
+    await supabase.auth.signInWithOAuth({
+      provider: "github",
+      options: {
+        redirectTo: `${window.location.origin}/auth/callback`,
+      },
+    });
+  };
+
+  /* =====================================================
      RESTORE DRAFT
   ===================================================== */
 
- /* =====================================================
-   RESTORE DRAFT
-===================================================== */
+  /* =====================================================
+    RESTORE DRAFT
+ ===================================================== */
 
-useEffect(() => {
-  const restoreDraft = () => {
-    try {
-      const savedDraft =
-        window.localStorage.getItem(DRAFT_KEY);
+  useEffect(() => {
+    const restoreDraft = () => {
+      try {
+        const savedDraft =
+          window.localStorage.getItem(DRAFT_KEY);
 
-      if (!savedDraft) {
-        return;
-      }
+        if (!savedDraft) {
+          return;
+        }
 
-      const parsed = JSON.parse(savedDraft);
+        const parsed = JSON.parse(savedDraft);
 
-      if (parsed?.formData) {
-        setFormData(
-          normalizeFormData(parsed.formData)
+        if (parsed?.formData) {
+          setFormData(
+            normalizeFormData(parsed.formData)
+          );
+        }
+
+        if (
+          parsed?.participation === "have-team" ||
+          parsed?.participation === "need-team"
+        ) {
+          setParticipation(parsed.participation);
+        }
+
+        setDraftRestored(true);
+      } catch (error) {
+        console.warn(
+          "Unable to restore registration draft.",
+          error
         );
       }
+    };
 
-      if (
-        parsed?.participation === "have-team" ||
-        parsed?.participation === "need-team"
-      ) {
-        setParticipation(parsed.participation);
-      }
+    const timer = window.setTimeout(
+      restoreDraft,
+      0
+    );
 
-      setDraftRestored(true);
-    } catch (error) {
-      console.warn(
-        "Unable to restore registration draft.",
-        error
-      );
-    }
-  };
-
-  const timer = window.setTimeout(
-    restoreDraft,
-    0
-  );
-
-  return () => {
-    window.clearTimeout(timer);
-  };
-}, []);
+    return () => {
+      window.clearTimeout(timer);
+    };
+  }, []);
 
   /* =====================================================
      AUTO SAVE DRAFT
@@ -403,6 +436,10 @@ useEffect(() => {
     ) {
       nextErrors.email =
         "Please enter a valid email address.";
+    }
+
+    if (!formData.password || formData.password.length < 6) {
+      nextErrors.password = "Password must be at least 6 characters.";
     }
 
     if (!formData.phone.trim()) {
@@ -724,45 +761,141 @@ useEffect(() => {
 
     setIsSubmitting(true);
 
-    /*
-      BACKEND INTEGRATION PLACEHOLDER
-
-      Anusha can replace this simulated submission
-      with the actual Supabase/API implementation.
-
-      Example:
-
-      const response = await fetch(
-        "/api/register",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({
-            ...formData,
-            participation,
-          }),
-        }
-      );
-
-      if (!response.ok) {
-        throw new Error("Registration failed");
-      }
-    */
-
     try {
-      await new Promise((resolve) =>
-        setTimeout(resolve, 1200)
-      );
+      const { data, error } = await supabase.auth.signUp({
+        email: formData.email,
+        password: formData.password!,
+        options: {
+          data: {
+            full_name: formData.fullName,
+          },
+        },
+      });
 
-      console.log(
-        "HackIGNISIA Registration:",
-        {
-          ...formData,
-          participation,
+      if (error) {
+        throw error;
+      }
+
+      if (data.user) {
+        // Give the browser client a moment to fully establish the new
+        // session before firing authenticated requests — calling these
+        // immediately after signUp() risks the request going out before
+        // auth.uid() resolves, which RLS would silently reject.
+        await new Promise((resolve) => setTimeout(resolve, 300));
+
+        // The trigger creates the profile. Update it with the remaining data.
+        const { error: profileError } = await supabase
+          .from("profiles")
+          .update({
+            mobile_number: formData.phone,
+            city: formData.city,
+            college: formData.college,
+            course: formData.course,
+            year_of_study: formData.currentYear,
+            linkedin_url: formData.linkedin,
+            github_url: formData.github,
+            preferred_track: formData.preferredTrack,
+            profile_completed: true,
+            updated_at: new Date().toISOString(),
+          })
+          .eq("id", data.user.id);
+
+        if (profileError) {
+          throw new Error(
+            "Profile update failed: " + profileError.message
+          );
         }
-      );
+
+        // Send welcome email
+        try {
+          await fetch("/api/emails", {
+            method: "POST",
+            headers: {
+              "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+              type: "welcome",
+              email: formData.email,
+              data: {
+                name: formData.fullName,
+              }
+            }),
+          });
+        } catch (e) {
+          console.error("Failed to send welcome email:", e);
+        }
+
+        if (formData.teamMode === "create") {
+          const code = Math.random().toString(36).substring(2, 8).toUpperCase();
+          const { data: eventData, error: eventError } = await supabase
+            .from("events")
+            .select("id")
+            .eq("is_active", true)
+            .single();
+            
+          if (eventError || !eventData) {
+            throw new Error("Could not find an active event to register the team under.");
+          }
+
+          const { data: newTeamData, error: teamError } = await supabase
+            .from("teams")
+            .insert({
+              name: formData.teamName,
+              team_code: code,
+              created_by: data.user.id,
+              max_members: 5,
+              event_id: eventData.id
+            })
+            .select("id")
+            .single();
+          if (teamError) {
+            throw new Error("SUPABASE ERROR DETAILS: " + JSON.stringify(teamError, null, 2));
+          }
+
+          // Add the creator as the accepted leader in team_members
+          if (newTeamData) {
+            const { error: leaderError } = await supabase
+              .from("team_members")
+              .insert({
+                team_id: newTeamData.id,
+                profile_id: data.user.id,
+                status: "accepted",
+                is_leader: true,
+              });
+            if (leaderError) {
+              throw new Error("Failed to set team leader: " + leaderError.message);
+            }
+          }
+        } else if (formData.teamMode === "join") {
+          // Uses the get_team_by_code RPC rather than selecting directly
+          // from "teams" — the team table is no longer broadly readable,
+          // so this is the safe, narrow way to resolve a code to a team.
+          const { data: joinTeam, error: lookupError } = await supabase
+            .rpc("get_team_by_code", {
+              p_team_code: formData.teamCode.toUpperCase(),
+            })
+            .single();
+
+          if (lookupError || !joinTeam) {
+            throw new Error(
+              "Could not find a team with that code. Please check it and try again."
+            );
+          }
+
+          const { error: joinError } = await supabase
+            .from("team_members")
+            .insert({
+              team_id: (joinTeam as { id: string }).id,
+              profile_id: data.user.id,
+              status: "pending",
+              is_leader: false
+            });
+
+          if (joinError) {
+            throw new Error("Failed to submit join request: " + joinError.message);
+          }
+        }
+      }
 
       try {
         window.localStorage.removeItem(
@@ -772,17 +905,16 @@ useEffect(() => {
         // Ignore storage errors.
       }
 
-      setSubmitted(true);
+      // Instead of showing a success screen, redirect directly to dashboard
+      // since email verification is disabled and they are automatically logged in.
+      router.push("/dashboard");
 
-      window.scrollTo({
-        top: 0,
-        behavior: "smooth",
-      });
-    } catch (error) {
+    } catch (error: any) {
       console.error(
         "Registration submission failed:",
         error
       );
+      alert("Registration failed: " + error.message);
     } finally {
       setIsSubmitting(false);
     }
@@ -857,7 +989,7 @@ useEffect(() => {
                     label="Participation"
                     value={
                       participation ===
-                      "have-team"
+                        "have-team"
                         ? "With a Team"
                         : "Looking for a Team"
                     }
@@ -931,6 +1063,41 @@ useEffect(() => {
               innovators from across India to build
               meaningful solutions.
             </p>
+
+            <div className="mx-auto mt-8 flex max-w-sm flex-col gap-3">
+              <button
+                type="button"
+                onClick={handleGoogleLogin}
+                className="flex w-full items-center justify-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm font-medium text-white transition hover:bg-white/[0.07]"
+              >
+                <svg width="18" height="18" viewBox="0 0 18 18" fill="none" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M17.64 9.2045c0-.638-.0573-1.2518-.1636-1.8409H9v3.4814h4.8436c-.2086 1.125-.8427 2.0782-1.7959 2.7164v2.2581h2.9087c1.7018-1.5668 2.6836-3.874 2.6836-6.615z" fill="#4285F4"/>
+                  <path d="M9 18c2.43 0 4.4673-.8059 5.9564-2.1818l-2.9087-2.2582c-.8059.54-1.8368.8591-3.0477.8591-2.3445 0-4.3282-1.5836-5.036-3.7105H.9574v2.3318C2.4382 15.9832 5.4818 18 9 18z" fill="#34A853"/>
+                  <path d="M3.964 10.71c-.18-.54-.2827-1.1168-.2827-1.71s.1027-1.17.2827-1.71V4.9582H.9574C.3477 6.1732 0 7.5482 0 9s.3477 2.8268.9574 4.0418L3.964 10.71z" fill="#FBBC05"/>
+                  <path d="M9 3.5795c1.3214 0 2.5077.4541 3.4405 1.346l2.5813-2.5814C13.4632.8918 11.4259 0 9 0 5.4818 0 2.4382 2.0168.9574 4.9582L3.964 7.29C4.6718 5.1632 6.6555 3.5795 9 3.5795z" fill="#EA4335"/>
+                </svg>
+                Continue with Google
+              </button>
+
+              <button
+                type="button"
+                onClick={handleGitHubLogin}
+                className="flex w-full items-center justify-center gap-3 rounded-xl border border-white/10 bg-white/[0.03] px-4 py-3 text-sm font-medium text-white transition hover:bg-white/[0.07]"
+              >
+                <svg width="18" height="18" viewBox="0 0 24 24" fill="currentColor" xmlns="http://www.w3.org/2000/svg">
+                  <path d="M12 0C5.374 0 0 5.373 0 12c0 5.302 3.438 9.8 8.207 11.387.599.111.793-.261.793-.577v-2.234c-3.338.726-4.033-1.416-4.033-1.416-.546-1.387-1.333-1.756-1.333-1.756-1.089-.745.083-.729.083-.729 1.205.084 1.839 1.237 1.839 1.237 1.07 1.834 2.807 1.304 3.492.997.107-.775.418-1.305.762-1.604-2.665-.305-5.467-1.334-5.467-5.931 0-1.311.469-2.381 1.236-3.221-.124-.303-.535-1.524.117-3.176 0 0 1.008-.322 3.301 1.23A11.509 11.509 0 0112 5.803c1.02.005 2.047.138 3.006.404 2.291-1.552 3.297-1.23 3.297-1.23.653 1.653.242 2.874.118 3.176.77.84 1.235 1.911 1.235 3.221 0 4.609-2.807 5.624-5.479 5.921.43.372.823 1.102.823 2.222v3.293c0 .319.192.694.801.576C20.566 21.797 24 17.3 24 12c0-6.627-5.373-12-12-12z"/>
+                </svg>
+                Continue with GitHub
+              </button>
+            </div>
+
+            <div className="mx-auto mt-8 flex max-w-2xl items-center gap-4">
+              <div className="h-px flex-1 bg-white/10" />
+              <span className="text-xs uppercase tracking-widest text-zinc-500">
+                Or fill the manual registration form
+              </span>
+              <div className="h-px flex-1 bg-white/10" />
+            </div>
           </div>
 
           {/* DRAFT RESTORED */}
@@ -1015,11 +1182,10 @@ useEffect(() => {
                       className="flex flex-col items-center"
                     >
                       <div
-                        className={`flex h-10 w-10 items-center justify-center rounded-full border text-xs font-semibold transition ${
-                          active
+                        className={`flex h-10 w-10 items-center justify-center rounded-full border text-xs font-semibold transition ${active
                             ? "border-violet-400 bg-violet-400 text-black"
                             : "border-white/10 bg-white/[0.03] text-zinc-600"
-                        }`}
+                          }`}
                       >
                         {completed
                           ? "✓"
@@ -1027,11 +1193,10 @@ useEffect(() => {
                       </div>
 
                       <span
-                        className={`mt-2 hidden text-[10px] uppercase tracking-wider sm:block ${
-                          active
+                        className={`mt-2 hidden text-[10px] uppercase tracking-wider sm:block ${active
                             ? "text-violet-400"
                             : "text-zinc-600"
-                        }`}
+                          }`}
                       >
                         {item.title}
                       </span>
@@ -1039,11 +1204,10 @@ useEffect(() => {
 
                     {current < TOTAL_STEPS && (
                       <div
-                        className={`mx-2 mt-5 h-px flex-1 transition ${
-                          current < step
+                        className={`mx-2 mt-5 h-px flex-1 transition ${current < step
                             ? "bg-violet-400/60"
                             : "bg-white/10"
-                        }`}
+                          }`}
                       />
                     )}
                   </div>
@@ -1099,6 +1263,21 @@ useEffect(() => {
                       )
                     }
                     error={errors.email}
+                  />
+
+                  <Input
+                    label="Password"
+                    required
+                    type="password"
+                    placeholder="Create a password (min 6 characters)"
+                    value={formData.password || ""}
+                    onChange={(value) =>
+                      updateField(
+                        "password",
+                        value
+                      )
+                    }
+                    error={errors.password}
                   />
 
                   <Input
@@ -1243,24 +1422,24 @@ useEffect(() => {
 
                   {formData.primaryDomain ===
                     "Other" && (
-                    <Input
-                      label="Specify Domain"
-                      required
-                      placeholder="Enter your domain"
-                      value={
-                        formData.otherDomain
-                      }
-                      onChange={(value) =>
-                        updateField(
-                          "otherDomain",
-                          value
-                        )
-                      }
-                      error={
-                        errors.otherDomain
-                      }
-                    />
-                  )}
+                      <Input
+                        label="Specify Domain"
+                        required
+                        placeholder="Enter your domain"
+                        value={
+                          formData.otherDomain
+                        }
+                        onChange={(value) =>
+                          updateField(
+                            "otherDomain",
+                            value
+                          )
+                        }
+                        error={
+                          errors.otherDomain
+                        }
+                      />
+                    )}
 
                   <div className="sm:col-span-2">
                     <label className="mb-2 block text-sm font-medium text-zinc-300">
@@ -1280,11 +1459,10 @@ useEffect(() => {
                         )
                       }
                       placeholder="Python, React, Node.js, AI, UI/UX..."
-                      className={`w-full rounded-xl border bg-black/40 px-4 py-3 text-sm text-white outline-none transition placeholder:text-zinc-700 focus:ring-1 ${
-                        errors.skills
+                      className={`w-full rounded-xl border bg-black/40 px-4 py-3 text-sm text-white outline-none transition placeholder:text-zinc-700 focus:ring-1 ${errors.skills
                           ? "border-red-400/50 focus:border-red-400/60 focus:ring-red-400/20"
                           : "border-white/10 focus:border-violet-400/50 focus:ring-violet-400/20"
-                      }`}
+                        }`}
                     />
 
                     <div className="mt-2 flex justify-between">
@@ -1348,15 +1526,15 @@ useEffect(() => {
                   <ParticipationCard
                     selected={
                       participation ===
-                      "need-team"
+                      "solo"
                     }
-                    icon="+"
-                    title="I need a team"
-                    description="I am participating individually and want to connect with other builders."
-                    action="Find teammates"
+                    icon="●"
+                    title="I am participating solo"
+                    description="I am participating individually."
+                    action="Continue solo"
                     onClick={() =>
                       handleParticipation(
-                        "need-team"
+                        "solo"
                       )
                     }
                   />
@@ -1372,211 +1550,143 @@ useEffect(() => {
 
                 {participation ===
                   "have-team" && (
-                  <div className="mt-8 rounded-2xl border border-white/10 bg-black/30 p-6">
-                    <div className="text-xs uppercase tracking-[0.18em] text-violet-400">
-                      Team Registration
-                    </div>
-
-                    <h3 className="mt-3 text-lg font-semibold">
-                      Team setup
-                    </h3>
-
-                    <p className="mt-2 text-sm leading-6 text-zinc-500">
-                      Create a new team or join an existing
-                      team using a team code.
-                    </p>
-
-                    {/* CREATE / JOIN */}
-
-                    <div className="mt-6 grid gap-3 sm:grid-cols-2">
-                      <button
-                        type="button"
-                        onClick={() => {
-                          updateField(
-                            "teamMode",
-                            "create"
-                          );
-
-                          updateField(
-                            "teamCode",
-                            ""
-                          );
-                        }}
-                        className={`rounded-xl border p-4 text-left transition ${
-                          formData.teamMode ===
-                          "create"
-                            ? "border-violet-400/50 bg-violet-400/[0.06]"
-                            : "border-white/10 hover:border-white/20"
-                        }`}
-                      >
-                        <div className="text-sm font-semibold">
-                          Create a team
-                        </div>
-
-                        <div className="mt-1 text-xs text-zinc-600">
-                          Start a new team for your
-                          participants.
-                        </div>
-                      </button>
-
-                      <button
-                        type="button"
-                        onClick={() => {
-                          updateField(
-                            "teamMode",
-                            "join"
-                          );
-
-                          updateField(
-                            "teamName",
-                            ""
-                          );
-                        }}
-                        className={`rounded-xl border p-4 text-left transition ${
-                          formData.teamMode ===
-                          "join"
-                            ? "border-violet-400/50 bg-violet-400/[0.06]"
-                            : "border-white/10 hover:border-white/20"
-                        }`}
-                      >
-                        <div className="text-sm font-semibold">
-                          Join a team
-                        </div>
-
-                        <div className="mt-1 text-xs text-zinc-600">
-                          Join an existing team using
-                          its code.
-                        </div>
-                      </button>
-                    </div>
-
-                    {errors.teamMode && (
-                      <p className="mt-3 text-xs text-red-400">
-                        {errors.teamMode}
-                      </p>
-                    )}
-
-                    {/* CREATE */}
-
-                    {formData.teamMode ===
-                      "create" && (
-                      <div className="mt-6">
-                        <Input
-                          label="Team Name"
-                          required
-                          placeholder="Enter your team name"
-                          value={
-                            formData.teamName
-                          }
-                          onChange={(value) =>
-                            updateField(
-                              "teamName",
-                              value
-                            )
-                          }
-                          error={
-                            errors.teamName
-                          }
-                        />
-
-                        <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.02] p-4">
-                          <p className="text-xs leading-6 text-zinc-600">
-                            After backend integration,
-                            the system can generate a
-                            unique team code for your
-                            newly created team.
-                          </p>
-                        </div>
+                    <div className="mt-8 rounded-2xl border border-white/10 bg-black/30 p-6">
+                      <div className="text-xs uppercase tracking-[0.18em] text-violet-400">
+                        Team Registration
                       </div>
-                    )}
 
-                    {/* JOIN */}
+                      <h3 className="mt-3 text-lg font-semibold">
+                        Team setup
+                      </h3>
 
-                    {formData.teamMode ===
-                      "join" && (
-                      <div className="mt-6">
-                        <Input
-                          label="Team Code"
-                          required
-                          placeholder="Enter team code"
-                          value={
-                            formData.teamCode
-                          }
-                          onChange={(value) =>
+                      <p className="mt-2 text-sm leading-6 text-zinc-500">
+                        Create a new team or join an existing
+                        team using a team code.
+                      </p>
+
+                      {/* CREATE / JOIN */}
+
+                      <div className="mt-6 grid gap-3 sm:grid-cols-2">
+                        <button
+                          type="button"
+                          onClick={() => {
+                            updateField(
+                              "teamMode",
+                              "create"
+                            );
+
                             updateField(
                               "teamCode",
-                              value.toUpperCase()
-                            )
-                          }
-                          error={
-                            errors.teamCode
-                          }
-                        />
+                              ""
+                            );
+                          }}
+                          className={`rounded-xl border p-4 text-left transition ${formData.teamMode ===
+                              "create"
+                              ? "border-violet-400/50 bg-violet-400/[0.06]"
+                              : "border-white/10 hover:border-white/20"
+                            }`}
+                        >
+                          <div className="text-sm font-semibold">
+                            Create a team
+                          </div>
 
-                        <div className="mt-4 rounded-xl border border-white/10 bg-white/[0.02] p-4">
-                          <p className="text-xs leading-6 text-zinc-600">
-                            Enter the team code shared
-                            by your team leader. The
-                            code will be verified after
-                            backend integration.
-                          </p>
-                        </div>
+                          <div className="mt-1 text-xs text-zinc-600">
+                            Start a new team for your
+                            participants.
+                          </div>
+                        </button>
+
+                        <button
+                          type="button"
+                          onClick={() => {
+                            updateField(
+                              "teamMode",
+                              "join"
+                            );
+
+                            updateField(
+                              "teamName",
+                              ""
+                            );
+                          }}
+                          className={`rounded-xl border p-4 text-left transition ${formData.teamMode ===
+                              "join"
+                              ? "border-violet-400/50 bg-violet-400/[0.06]"
+                              : "border-white/10 hover:border-white/20"
+                            }`}
+                        >
+                          <div className="text-sm font-semibold">
+                            Join a team
+                          </div>
+
+                          <div className="mt-1 text-xs text-zinc-600">
+                            Join an existing team using
+                            its code.
+                          </div>
+                        </button>
                       </div>
-                    )}
-                  </div>
-                )}
 
-                {/* NEED TEAM */}
+                      {errors.teamMode && (
+                        <p className="mt-3 text-xs text-red-400">
+                          {errors.teamMode}
+                        </p>
+                      )}
 
-                {participation ===
-                  "need-team" && (
-                  <div className="mt-8 rounded-2xl border border-violet-400/20 bg-violet-400/[0.04] p-6">
-                    <div className="text-xs uppercase tracking-[0.18em] text-violet-400">
-                      Team Matching
+                      {/* CREATE */}
+
+                      {formData.teamMode ===
+                        "create" && (
+                          <div className="mt-6">
+                            <Input
+                              label="Team Name"
+                              required
+                              placeholder="Enter your team name"
+                              value={
+                                formData.teamName
+                              }
+                              onChange={(value) =>
+                                updateField(
+                                  "teamName",
+                                  value
+                                )
+                              }
+                              error={
+                                errors.teamName
+                              }
+                            />
+
+                          </div>
+                        )}
+
+                      {/* JOIN */}
+
+                      {formData.teamMode ===
+                        "join" && (
+                          <div className="mt-6">
+                            <Input
+                              label="Team Code"
+                              required
+                              placeholder="Enter team code"
+                              value={
+                                formData.teamCode
+                              }
+                              onChange={(value) =>
+                                updateField(
+                                  "teamCode",
+                                  value.toUpperCase()
+                                )
+                              }
+                              error={
+                                errors.teamCode
+                              }
+                            />
+
+                          </div>
+                        )}
                     </div>
+                  )}
 
-                    <h3 className="mt-3 text-lg font-semibold">
-                      Find builders with complementary
-                      skills.
-                    </h3>
 
-                    <p className="mt-2 text-sm leading-6 text-zinc-500">
-                      We can use your technical interests,
-                      domain, and skills to help you
-                      discover suitable teammates.
-                    </p>
-
-                    <label className="mt-6 flex cursor-pointer items-start gap-3">
-                      <input
-                        type="checkbox"
-                        checked={
-                          formData.lookingForTeam
-                        }
-                        onChange={(event) =>
-                          updateField(
-                            "lookingForTeam",
-                            event.target.checked
-                          )
-                        }
-                        className="mt-1 h-4 w-4 accent-violet-400"
-                      />
-
-                      <span className="text-sm leading-6 text-zinc-500">
-                        I am interested in finding
-                        teammates through the HackIGNISIA
-                        community.
-                      </span>
-                    </label>
-
-                    <div className="mt-5 rounded-xl border border-white/10 bg-black/20 p-4">
-                      <p className="text-xs leading-6 text-zinc-600">
-                        Your preference will be stored
-                        with your registration once the
-                        backend integration is completed.
-                      </p>
-                    </div>
-                  </div>
-                )}
 
                 {!participation && (
                   <div className="mt-6 rounded-xl border border-dashed border-white/10 p-5 text-center">
@@ -1739,7 +1849,7 @@ useEffect(() => {
                         label="Location"
                         value={
                           formData.city &&
-                          formData.state
+                            formData.state
                             ? `${formData.city}, ${formData.state}`
                             : "Not provided"
                         }
@@ -1819,66 +1929,56 @@ useEffect(() => {
                         label="Participation"
                         value={
                           participation ===
-                          "have-team"
+                            "have-team"
                             ? "I have a team"
                             : participation ===
-                                "need-team"
-                              ? "I need a team"
+                              "solo"
+                              ? "Solo"
                               : "Not selected"
                         }
                       />
 
                       {participation ===
                         "have-team" && (
-                        <>
-                          <Summary
-                            label="Team Mode"
-                            value={
-                              formData.teamMode ===
-                              "create"
-                                ? "Create a Team"
-                                : formData.teamMode ===
+                          <>
+                            <Summary
+                              label="Team Mode"
+                              value={
+                                formData.teamMode ===
+                                  "create"
+                                  ? "Create a Team"
+                                  : formData.teamMode ===
                                     "join"
-                                  ? "Join Existing Team"
-                                  : "Not selected"
-                            }
-                          />
-
-                          {formData.teamMode ===
-                            "create" && (
-                            <Summary
-                              label="Team Name"
-                              value={
-                                formData.teamName ||
-                                "Not provided"
+                                    ? "Join Existing Team"
+                                    : "Not selected"
                               }
                             />
-                          )}
 
-                          {formData.teamMode ===
-                            "join" && (
-                            <Summary
-                              label="Team Code"
-                              value={
-                                formData.teamCode ||
-                                "Not provided"
-                              }
-                            />
-                          )}
-                        </>
-                      )}
+                            {formData.teamMode ===
+                              "create" && (
+                                <Summary
+                                  label="Team Name"
+                                  value={
+                                    formData.teamName ||
+                                    "Not provided"
+                                  }
+                                />
+                              )}
 
-                      {participation ===
-                        "need-team" && (
-                        <Summary
-                          label="Team Matching"
-                          value={
-                            formData.lookingForTeam
-                              ? "Interested"
-                              : "Not interested"
-                          }
-                        />
-                      )}
+                            {formData.teamMode ===
+                              "join" && (
+                                <Summary
+                                  label="Team Code"
+                                  value={
+                                    formData.teamCode ||
+                                    "Not provided"
+                                  }
+                                />
+                              )}
+                          </>
+                        )}
+
+
                     </div>
                   </ReviewSection>
 
@@ -1980,11 +2080,9 @@ useEffect(() => {
                     </div>
 
                     <p className="mt-3 text-sm leading-6 text-zinc-500">
-                      Please review your information
-                      carefully. Your registration will be
-                      connected to the HackIGNISIA participant
-                      system after the backend integration is
-                      completed.
+                      Please review your information carefully.
+                      Once you submit, your account will be created
+                      and you will be securely logged in to your participant dashboard.
                     </p>
                   </div>
                 </div>
@@ -2170,6 +2268,9 @@ function Input({
   error?: string;
   required?: boolean;
 }) {
+  const [showPassword, setShowPassword] = useState(false);
+  const isPassword = type === "password";
+
   return (
     <div>
       <label className="mb-2 block text-sm font-medium text-zinc-300">
@@ -2182,19 +2283,34 @@ function Input({
         )}
       </label>
 
-      <input
-        type={type}
-        value={value}
-        onChange={(event) =>
-          onChange(event.target.value)
-        }
-        placeholder={placeholder}
-        className={`w-full rounded-xl border bg-black/40 px-4 py-3 text-sm text-white outline-none transition placeholder:text-zinc-700 focus:ring-1 ${
-          error
-            ? "border-red-400/50 focus:border-red-400/60 focus:ring-red-400/20"
-            : "border-white/10 focus:border-violet-400/50 focus:ring-violet-400/20"
-        }`}
-      />
+      <div className="relative">
+        <input
+          type={isPassword && showPassword ? "text" : type}
+          value={value}
+          onChange={(event) =>
+            onChange(event.target.value)
+          }
+          placeholder={placeholder}
+          className={`w-full rounded-xl border bg-black/40 px-4 py-3 text-sm text-white outline-none transition placeholder:text-zinc-700 focus:ring-1 ${error
+              ? "border-red-400/50 focus:border-red-400/60 focus:ring-red-400/20"
+              : "border-white/10 focus:border-violet-400/50 focus:ring-violet-400/20"
+            } ${isPassword ? "pr-10" : ""}`}
+        />
+        
+        {isPassword && (
+          <button
+            type="button"
+            onClick={() => setShowPassword(!showPassword)}
+            className="absolute inset-y-0 right-0 flex items-center pr-3 text-zinc-500 hover:text-zinc-300"
+          >
+            {showPassword ? (
+              <EyeOff className="h-5 w-5" />
+            ) : (
+              <Eye className="h-5 w-5" />
+            )}
+          </button>
+        )}
+      </div>
 
       {error && (
         <p className="mt-2 text-xs text-red-400">
@@ -2252,11 +2368,10 @@ function Textarea({
           onChange(event.target.value)
         }
         placeholder={placeholder}
-        className={`w-full resize-none rounded-xl border bg-black/40 px-4 py-3 text-sm text-white outline-none transition placeholder:text-zinc-700 focus:ring-1 ${
-          error
+        className={`w-full resize-none rounded-xl border bg-black/40 px-4 py-3 text-sm text-white outline-none transition placeholder:text-zinc-700 focus:ring-1 ${error
             ? "border-red-400/50 focus:border-red-400/60 focus:ring-red-400/20"
             : "border-white/10 focus:border-violet-400/50 focus:ring-violet-400/20"
-        }`}
+          }`}
       />
 
       {error && (
@@ -2306,13 +2421,12 @@ function Select({
         onChange={(event) =>
           onChange(event.target.value)
         }
-        className={`w-full rounded-xl border bg-black/40 px-4 py-3 text-sm text-zinc-300 outline-none transition focus:ring-1 ${
-          error
+        className={`w-full rounded-xl border bg-black/40 px-4 py-3 text-sm text-zinc-300 outline-none transition focus:ring-1 ${error
             ? "border-red-400/50 focus:border-red-400/60 focus:ring-red-400/20"
             : "border-white/10 focus:border-violet-400/50 focus:ring-violet-400/20"
-        }`}
+          }`}
       >
-        <option value="">
+        <option value="" disabled className="bg-zinc-900 text-zinc-300">
           {placeholder}
         </option>
 
@@ -2320,6 +2434,7 @@ function Select({
           <option
             key={option}
             value={option}
+            className="bg-zinc-900 text-zinc-300"
           >
             {option}
           </option>
@@ -2358,18 +2473,16 @@ function ParticipationCard({
     <button
       type="button"
       onClick={onClick}
-      className={`group rounded-2xl border p-6 text-left transition ${
-        selected
+      className={`group rounded-2xl border p-6 text-left transition ${selected
           ? "border-violet-400/60 bg-violet-400/[0.08] shadow-lg shadow-violet-500/5"
           : "border-white/10 bg-white/[0.02] hover:border-white/20 hover:bg-white/[0.04]"
-      }`}
+        }`}
     >
       <div
-        className={`flex h-11 w-11 items-center justify-center rounded-xl text-xl ${
-          selected
+        className={`flex h-11 w-11 items-center justify-center rounded-xl text-xl ${selected
             ? "bg-violet-400 text-black"
             : "bg-white/[0.05] text-zinc-400"
-        }`}
+          }`}
       >
         {icon}
       </div>

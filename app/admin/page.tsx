@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Notifications from "@/components/Notifications";
 import {
   Activity,
   BarChart3,
@@ -456,14 +457,7 @@ export default function AdminDashboardPage() {
               </div>
 
               <div className="flex items-center gap-3">
-                <button
-                  type="button"
-                  className="relative rounded-xl border border-white/10 bg-white/[0.025] p-2.5 text-zinc-500 hover:text-white"
-                >
-                  <Bell size={18} />
-
-                  <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-violet-400" />
-                </button>
+                <Notifications />
 
                 <div className="hidden h-7 w-px bg-white/10 sm:block" />
 

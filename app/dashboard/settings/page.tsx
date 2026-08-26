@@ -1,7 +1,9 @@
 "use client";
 
 import Link from "next/link";
-import { useState } from "react";
+import { useState, useEffect } from "react";
+import { useRouter } from "next/navigation";
+import { createClient } from "@/utils/supabase/client";
 import {
   Bell,
   Check,
@@ -52,22 +54,105 @@ export default function SettingsPage() {
   const [submissionNotifications, setSubmissionNotifications] =
     useState(true);
 
-  const [appearance, setAppearance] = useState<
-    "dark" | "light" | "system"
-  >("dark");
-
   const [saved, setSaved] = useState(false);
   const [passwordModal, setPasswordModal] = useState(false);
   const [logoutModal, setLogoutModal] = useState(false);
   const [deleteModal, setDeleteModal] = useState(false);
+  const [profile, setProfile] = useState<any>(null);
+  const [teamName, setTeamName] = useState<string>("Loading...");
+  const [loading, setLoading] = useState(true);
+  const supabase = createClient();
+  const router = useRouter();
 
-  function handleSave() {
+  useEffect(() => {
+    async function loadProfile() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setLoading(false);
+        return;
+      }
+
+      const { data: profileData } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", user.id)
+        .single();
+      
+      setProfile(profileData);
+      
+      if (profileData) {
+        setEmailNotifications(profileData.email_notifications ?? true);
+        setAnnouncementNotifications(profileData.announcement_notifications ?? true);
+        setTeamNotifications(profileData.team_notifications ?? true);
+        setSubmissionNotifications(profileData.submission_notifications ?? true);
+      }
+
+      const { data: myMember } = await supabase
+        .from("team_members")
+        .select("team_id")
+        .eq("profile_id", user.id)
+        .single();
+
+      if (myMember && myMember.team_id) {
+        const { data: teamRes } = await supabase
+          .from("teams")
+          .select("name")
+          .eq("id", myMember.team_id)
+          .single();
+        if (teamRes) setTeamName(teamRes.name);
+      } else {
+        setTeamName("No Team");
+      }
+
+      setLoading(false);
+    }
+    loadProfile();
+  }, []);
+
+  async function handleLogout() {
+    await supabase.auth.signOut();
+    router.push("/");
+  }
+
+  async function handleDeleteAccount() {
+    try {
+      const res = await fetch("/api/delete-account", { method: "DELETE" });
+      if (!res.ok) {
+        const body = await res.json();
+        alert("Failed to delete account: " + body.error);
+        return;
+      }
+      await supabase.auth.signOut();
+      router.push("/");
+    } catch {
+      alert("Something went wrong. Please try again.");
+    }
+  }
+
+  async function handleSave() {
+    if (!profile?.id) return;
+
+    await supabase
+      .from("profiles")
+      .update({
+        email_notifications: emailNotifications,
+        announcement_notifications: announcementNotifications,
+        team_notifications: teamNotifications,
+        submission_notifications: submissionNotifications
+      })
+      .eq("id", profile.id);
+
     setSaved(true);
 
     window.setTimeout(() => {
       setSaved(false);
     }, 2500);
   }
+
+  const participantName = profile?.full_name || "Participant";
+  const initials = participantName.split(" ").map((n: string) => n[0]).join("").substring(0, 2).toUpperCase();
+  const email = profile?.email || "Unknown Email";
+  const regId = profile?.id?.substring(0, 11).toUpperCase() || "IGN26-00000";
 
   return (
     <main className="min-h-screen bg-[#050505] text-white">
@@ -116,13 +201,13 @@ export default function SettingsPage() {
 
             <div className="relative flex flex-col gap-6 sm:flex-row sm:items-center">
               <div className="flex h-16 w-16 shrink-0 items-center justify-center rounded-2xl bg-violet-400/10 text-lg font-bold text-violet-300 ring-1 ring-violet-400/10">
-                AP
+                {loading ? "..." : initials}
               </div>
 
               <div className="min-w-0 flex-1">
                 <div className="flex flex-wrap items-center gap-2">
                   <h2 className="text-lg font-semibold">
-                    Aman Pathak
+                    {loading ? "Loading..." : participantName}
                   </h2>
 
                   <span className="rounded-full border border-emerald-400/15 bg-emerald-400/[0.05] px-2.5 py-1 text-[8px] font-semibold uppercase tracking-wider text-emerald-400">
@@ -133,10 +218,10 @@ export default function SettingsPage() {
                 <div className="mt-1 flex flex-wrap items-center gap-x-4 gap-y-1 text-xs text-zinc-600">
                   <span className="flex items-center gap-1.5">
                     <Mail size={12} />
-                    aman@example.com
+                    {loading ? "Loading..." : email}
                   </span>
 
-                  <span>IGN26-00482</span>
+                  <span>{loading ? "Loading..." : regId}</span>
                 </div>
               </div>
 
@@ -228,40 +313,6 @@ export default function SettingsPage() {
               </div>
             </SettingsCard>
 
-            {/* APPEARANCE */}
-
-            <SettingsCard
-              icon={<Monitor size={17} />}
-              eyebrow="Interface"
-              title="Appearance"
-              description="Customize how the participant portal looks."
-            >
-              <div className="mt-6 grid gap-3 sm:grid-cols-3">
-                <AppearanceOption
-                  icon={<Moon size={18} />}
-                  title="Dark"
-                  description="Recommended"
-                  active={appearance === "dark"}
-                  onClick={() => setAppearance("dark")}
-                />
-
-                <AppearanceOption
-                  icon={<Sun size={18} />}
-                  title="Light"
-                  description="Bright interface"
-                  active={appearance === "light"}
-                  onClick={() => setAppearance("light")}
-                />
-
-                <AppearanceOption
-                  icon={<Monitor size={18} />}
-                  title="System"
-                  description="Use device setting"
-                  active={appearance === "system"}
-                  onClick={() => setAppearance("system")}
-                />
-              </div>
-            </SettingsCard>
 
             {/* SECURITY */}
 
@@ -357,10 +408,10 @@ export default function SettingsPage() {
               RIGHT
           ================================================= */}
 
-          <aside className="space-y-6">
+          <aside className="sticky top-24 space-y-6">
             {/* SAVE CARD */}
 
-            <div className="sticky top-24 rounded-3xl border border-violet-400/10 bg-violet-400/[0.035] p-5">
+            <div className="rounded-3xl border border-violet-400/10 bg-violet-400/[0.035] p-5">
               <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-400/10 text-violet-400">
                 <Save size={18} />
               </div>
@@ -370,9 +421,8 @@ export default function SettingsPage() {
               </h3>
 
               <p className="mt-2 text-xs leading-5 text-zinc-600">
-                Your preferences are currently stored locally in
-                this interface. Supabase persistence can be connected
-                later.
+                Your notification preferences are securely saved to 
+                your platform account and will persist across sessions.
               </p>
 
               <button
@@ -404,18 +454,18 @@ export default function SettingsPage() {
               <div className="mt-5 space-y-4">
                 <StatusItem
                   label="Registration"
-                  value="Confirmed"
+                  value={loading ? "..." : "Confirmed"}
                   success
                 />
 
                 <StatusItem
                   label="Profile"
-                  value="85% Complete"
+                  value={loading ? "..." : (profile?.profile_completed ? "100% Complete" : "Incomplete")}
                 />
 
                 <StatusItem
                   label="Team"
-                  value="Team Vector"
+                  value={teamName}
                 />
 
                 <StatusItem
@@ -492,7 +542,7 @@ export default function SettingsPage() {
 
             <button
               type="button"
-              onClick={() => setLogoutModal(false)}
+              onClick={handleLogout}
               className="inline-flex items-center justify-center gap-2 rounded-xl bg-violet-400 px-4 py-2.5 text-xs font-semibold text-black hover:bg-violet-300"
             >
               <LogOut size={14} />
@@ -509,7 +559,7 @@ export default function SettingsPage() {
       {deleteModal && (
         <Modal
           title="Delete account?"
-          description="This is a placeholder action for now. Account deletion will be connected to Supabase after the authentication layer is completed."
+          description="This will permanently delete your account and all associated data. This action cannot be undone."
           onClose={() => setDeleteModal(false)}
         >
           <div className="flex flex-col gap-3 sm:flex-row sm:justify-end">
@@ -523,7 +573,10 @@ export default function SettingsPage() {
 
             <button
               type="button"
-              onClick={() => setDeleteModal(false)}
+              onClick={async () => {
+                setDeleteModal(false);
+                await handleDeleteAccount();
+              }}
               className="inline-flex items-center justify-center gap-2 rounded-xl bg-red-500/90 px-4 py-2.5 text-xs font-semibold text-white hover:bg-red-500"
             >
               <Trash2 size={14} />

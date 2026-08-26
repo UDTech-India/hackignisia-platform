@@ -25,11 +25,37 @@ export async function updateSession(request: NextRequest) {
 
   const { data: { user } } = await supabase.auth.getUser()
 
-  if (!user && request.nextUrl.pathname.startsWith('/dashboard')) {
+  const { pathname } = request.nextUrl
+
+  // Redirect unauthenticated users away from /dashboard
+  if (!user && pathname.startsWith('/dashboard')) {
     const url = request.nextUrl.clone()
     url.pathname = '/login'
     return NextResponse.redirect(url)
   }
 
+  // Guard all /admin routes — must be authenticated AND have platform_role === 'admin'
+  if (pathname.startsWith('/admin')) {
+    if (!user) {
+      const url = request.nextUrl.clone()
+      url.pathname = '/login'
+      return NextResponse.redirect(url)
+    }
+
+    // Fetch the user's platform_role from the profiles table
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('platform_role')
+      .eq('id', user.id)
+      .single()
+
+    if (!profile || profile.platform_role !== 'admin') {
+      // Not an admin — redirect to dashboard
+      const url = request.nextUrl.clone()
+      url.pathname = '/dashboard'
+      return NextResponse.redirect(url)
+    }
+  }
+
   return supabaseResponse
-}
+}

@@ -82,15 +82,35 @@ export default function Home() {
             >
               FAQ
             </a>
+            <Link
+              href="/rules"
+              className="transition hover:text-white"
+            >
+              Rules
+            </Link>
+            <Link
+              href="/contact"
+              className="transition hover:text-white"
+            >
+              Contact
+            </Link>
           </nav>
 
-          {/* Desktop Register */}
-          <Link
-            href="/register"
-            className="btn-primary hidden md:inline-flex"
-          >
-            Register
-          </Link>
+          {/* Desktop Auth */}
+          <div className="hidden items-center gap-4 md:flex">
+            <Link
+              href="/login"
+              className="text-sm font-medium text-zinc-400 transition hover:text-white"
+            >
+              Login
+            </Link>
+            <Link
+              href="/register"
+              className="btn-primary"
+            >
+              Register
+            </Link>
+          </div>
 
           {/* Mobile Menu Button */}
           <button
@@ -151,10 +171,32 @@ export default function Home() {
               <a
                 href="#faq"
                 onClick={closeMobileMenu}
-                className="py-4 text-sm text-zinc-400 transition hover:text-white"
+                className="border-b border-white/5 py-4 text-sm text-zinc-400 transition hover:text-white"
               >
                 FAQ
               </a>
+              <Link
+                href="/rules"
+                onClick={closeMobileMenu}
+                className="border-b border-white/5 py-4 text-sm text-zinc-400 transition hover:text-white"
+              >
+                Rules
+              </Link>
+              <Link
+                href="/contact"
+                onClick={closeMobileMenu}
+                className="py-4 text-sm text-zinc-400 transition hover:text-white"
+              >
+                Contact
+              </Link>
+
+              <Link
+                href="/login"
+                onClick={closeMobileMenu}
+                className="mt-4 text-center text-sm font-medium text-zinc-400 transition hover:text-white"
+              >
+                Login
+              </Link>
 
               <Link
                 href="/register"

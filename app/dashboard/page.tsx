@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Notifications from "@/components/Notifications";
 import {
   Bell,
   CalendarDays,
@@ -23,7 +24,9 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { useState, type ReactNode } from "react";
+import { useEffect, useState, type ReactNode } from "react";
+import { createClient } from "@/utils/supabase/client";
+import { useRouter } from "next/navigation";
 
 /* =========================================================
    TYPES
@@ -56,48 +59,7 @@ type SidebarLinkProps = {
    Replace with Supabase data later.
 ========================================================= */
 
-const participant = {
-  name: "Aman Pathak",
-  email: "aman@example.com",
-  registrationId: "IGN26-00482",
-  college: "Maharishi University of Information Technology",
-  course: "B.Tech",
-  year: "3rd Year",
-  domain: "Artificial Intelligence & Data Science",
-  track: "AI & Machine Learning",
-  skills: ["Python", "React", "Node.js", "AI", "Data Science"],
-  profileCompletion: 85,
-};
-
-const team = {
-  name: "Team Vector",
-  code: "VX7K29",
-  members: 4,
-  maxMembers: 5,
-};
-
-const teamMembers: TeamMember[] = [
-  {
-    name: "Aman Pathak",
-    role: "Team Leader",
-    initials: "AP",
-  },
-  {
-    name: "Anusha Anu Prasad",
-    role: "Backend & Architecture",
-    initials: "AA",
-  },
-  {
-    name: "Team Member",
-    role: "Frontend Developer",
-    initials: "TM",
-  },
-  {
-    name: "Team Member",
-    role: "AI / ML Developer",
-    initials: "TM",
-  },
-];
+// Removed hardcoded participant, team, and teamMembers
 
 const activities: Activity[] = [
   {
@@ -174,6 +136,81 @@ const eventDates = [
 
 export default function DashboardPage() {
   const [sidebarOpen, setSidebarOpen] = useState(false);
+  const [loading, setLoading] = useState(true);
+  const [profile, setProfile] = useState<any>(null);
+  const [teamData, setTeamData] = useState<any>(null);
+  const [teamMembersList, setTeamMembersList] = useState<any[]>([]);
+  const supabase = createClient();
+  const router = useRouter();
+
+  useEffect(() => {
+    async function loadData() {
+      const { data: { user } } = await supabase.auth.getUser();
+      if (!user) {
+        setLoading(false);
+        return;
+      }
+
+      const { data: profileData } = await supabase
+        .from("profiles")
+        .select("*")
+        .eq("id", user.id)
+        .single();
+      
+      if (profileData && profileData.profile_completed === false) {
+        router.push("/dashboard/profile");
+        return;
+      }
+
+      setProfile(profileData);
+
+      // Fetch user's team membership
+      const { data: myMember } = await supabase
+        .from("team_members")
+        .select("team_id")
+        .eq("profile_id", user.id)
+        .single();
+
+      if (myMember && myMember.team_id) {
+        const { data: teamRes } = await supabase
+          .from("teams")
+          .select("*")
+          .eq("id", myMember.team_id)
+          .single();
+        setTeamData(teamRes);
+
+        const { data: membersRes } = await supabase
+          .from("team_members")
+          .select("*, profiles(full_name)")
+          .eq("team_id", myMember.team_id);
+        
+        if (membersRes) {
+          // Leader always first
+          const sorted = [...membersRes].sort((a, b) =>
+            (b.is_leader ? 1 : 0) - (a.is_leader ? 1 : 0)
+          );
+          setTeamMembersList(sorted);
+        }
+      }
+
+      setLoading(false);
+    }
+    loadData();
+  }, []);
+
+  if (loading) {
+    return (
+      <div className="flex min-h-screen items-center justify-center bg-[#050505] text-white">
+        <div className="text-sm text-zinc-500">Loading dashboard...</div>
+      </div>
+    );
+  }
+
+  const participantName = profile?.full_name || "Participant";
+  const initials = participantName.split(" ").map((n: string) => n[0]).join("").substring(0, 2).toUpperCase();
+  const regId = profile?.id?.substring(0, 11).toUpperCase() || "IGN26-00000";
+  const firstName = participantName.split(" ")[0];
+  const profileCompletion = profile?.profile_completed ? 100 : 50;
 
   return (
     <main className="min-h-screen bg-[#050505] text-white">
@@ -242,15 +279,15 @@ export default function DashboardPage() {
           <div className="px-4 pt-5">
             <div className="rounded-2xl border border-white/[0.08] bg-white/[0.025] p-4">
               <div className="flex items-center gap-3">
-                <Avatar initials="AP" />
+                <Avatar initials={initials} />
 
                 <div className="min-w-0">
                   <div className="truncate text-sm font-semibold">
-                    {participant.name}
+                    {participantName}
                   </div>
 
                   <div className="mt-0.5 truncate text-[11px] text-zinc-600">
-                    {participant.registrationId}
+                    {regId}
                   </div>
                 </div>
               </div>
@@ -391,21 +428,13 @@ export default function DashboardPage() {
               </div>
 
               <div className="flex items-center gap-2">
-                <button
-                  type="button"
-                  aria-label="Notifications"
-                  className="relative rounded-xl border border-white/10 bg-white/[0.025] p-2.5 text-zinc-500 transition hover:text-white"
-                >
-                  <Bell size={18} />
-
-                  <span className="absolute right-2 top-2 h-1.5 w-1.5 rounded-full bg-violet-400" />
-                </button>
+                <Notifications />
 
                 <div className="hidden h-7 w-px bg-white/10 sm:block" />
 
                 <div className="hidden text-right sm:block">
                   <div className="text-xs font-medium">
-                    {participant.name}
+                    {participantName}
                   </div>
 
                   <div className="mt-0.5 text-[10px] text-zinc-600">
@@ -413,7 +442,7 @@ export default function DashboardPage() {
                   </div>
                 </div>
 
-                <Avatar initials="AP" small />
+                <Avatar initials={initials} small />
               </div>
             </div>
           </header>
@@ -436,7 +465,7 @@ export default function DashboardPage() {
                   <h1 className="text-3xl font-bold tracking-tight sm:text-4xl">
                     Welcome back,{" "}
                     <span className="text-violet-400">
-                      {participant.name.split(" ")[0]}
+                      {firstName}
                     </span>
                     .
                   </h1>
@@ -455,7 +484,7 @@ export default function DashboardPage() {
                     </div>
 
                     <div className="mt-1 font-mono text-sm font-semibold text-violet-300">
-                      {participant.registrationId}
+                      {regId}
                     </div>
                   </div>
                 </div>
@@ -476,21 +505,21 @@ export default function DashboardPage() {
               <StatCard
                 icon={<Users size={18} />}
                 label="Team"
-                value={team.name}
-                description={`${team.members}/${team.maxMembers} members`}
+                value={teamData?.name || "No Team"}
+                description={`${teamMembersList.length}/5 members`}
               />
 
               <StatCard
                 icon={<Target size={18} />}
                 label="Track"
-                value="AI & ML"
+                value={profile?.preferred_track || "Web & App"}
                 description="Preferred track"
               />
 
               <StatCard
                 icon={<Trophy size={18} />}
                 label="Profile"
-                value={`${participant.profileCompletion}%`}
+                value={`${profileCompletion}%`}
                 description="Profile completed"
               />
             </section>
@@ -525,7 +554,7 @@ export default function DashboardPage() {
                     <div className="flex items-end justify-between">
                       <div>
                         <div className="text-3xl font-bold">
-                          {participant.profileCompletion}%
+                          {profileCompletion}%
                         </div>
 
                         <div className="mt-1 text-xs text-zinc-600">
@@ -534,7 +563,7 @@ export default function DashboardPage() {
                       </div>
 
                       <span className="text-xs font-medium text-violet-400">
-                        Almost there
+                        {profileCompletion === 100 ? "Complete" : "Almost there"}
                       </span>
                     </div>
 
@@ -542,7 +571,7 @@ export default function DashboardPage() {
                       <div
                         className="h-full rounded-full bg-violet-400 transition-all"
                         style={{
-                          width: `${participant.profileCompletion}%`,
+                          width: `${profileCompletion}%`,
                         }}
                       />
                     </div>
@@ -550,19 +579,19 @@ export default function DashboardPage() {
                     <div className="mt-5 grid gap-3 sm:grid-cols-3">
                       <MiniInfo
                         label="College"
-                        value={participant.college}
+                        value={profile?.college || "Not provided"}
                         icon={<GraduationCap size={14} />}
                       />
 
                       <MiniInfo
                         label="Year"
-                        value={participant.year}
+                        value={profile?.year_of_study || "Not provided"}
                         icon={<CalendarDays size={14} />}
                       />
 
                       <MiniInfo
                         label="Domain"
-                        value={participant.domain}
+                        value={profile?.course || "Not provided"}
                         icon={<Code2 size={14} />}
                       />
                     </div>
@@ -576,7 +605,7 @@ export default function DashboardPage() {
                     <SectionHeading
                       icon={<Users size={16} />}
                       eyebrow="Team"
-                      title={team.name}
+                      title={teamData?.name || "No Team"}
                       description="Your current hackathon team."
                     />
 
@@ -598,7 +627,7 @@ export default function DashboardPage() {
                           </div>
 
                           <div className="mt-2 font-mono text-2xl font-bold tracking-[0.15em] text-violet-300">
-                            {team.code}
+                            {teamData?.team_code || "------"}
                           </div>
                         </div>
 
@@ -615,19 +644,19 @@ export default function DashboardPage() {
                         </span>
 
                         <span className="text-xs font-medium text-zinc-400">
-                          {team.members}/{team.maxMembers}
+                          {teamMembersList.length}/5
                         </span>
                       </div>
 
                       <div className="mt-2 flex gap-1.5">
                         {Array.from({
-                          length: team.maxMembers,
+                          length: 5,
                         }).map((_, index) => (
                           <div
                             key={index}
                             className={[
                               "h-1.5 flex-1 rounded-full",
-                              index < team.members
+                              index < teamMembersList.length
                                 ? "bg-violet-400"
                                 : "bg-white/[0.07]",
                             ].join(" ")}
@@ -643,7 +672,7 @@ export default function DashboardPage() {
                         </div>
 
                         <div className="mt-3 text-xl font-bold">
-                          {team.members}
+                          {teamMembersList.length}
                         </div>
 
                         <div className="text-[10px] uppercase tracking-wider text-zinc-700">
@@ -654,33 +683,36 @@ export default function DashboardPage() {
                   </div>
 
                   <div className="mt-5 grid gap-2 sm:grid-cols-2">
-                    {teamMembers.map((member, index) => (
+                    {teamMembersList.map((member, index) => {
+                      const memberName = member.profiles?.full_name || "Unknown";
+                      const memberInitials = memberName.split(" ").map((n: string) => n[0]).join("").substring(0, 2).toUpperCase();
+                      return (
                       <div
-                        key={`${member.name}-${index}`}
+                        key={`${member.id}-${index}`}
                         className="flex items-center gap-3 rounded-xl border border-white/[0.06] bg-white/[0.015] p-3"
                       >
                         <Avatar
-                          initials={member.initials}
+                          initials={memberInitials}
                           small
                         />
 
                         <div className="min-w-0">
                           <div className="truncate text-xs font-medium text-zinc-300">
-                            {member.name}
+                            {memberName}
                           </div>
 
                           <div className="mt-0.5 truncate text-[10px] text-zinc-700">
-                            {member.role}
+                            {member.is_leader ? "Team Leader" : "Team Member"}
                           </div>
                         </div>
 
-                        {index === 0 && (
+                        {member.is_leader && (
                           <span className="ml-auto rounded-md bg-violet-400/10 px-2 py-1 text-[8px] uppercase tracking-wider text-violet-400">
                             Leader
                           </span>
                         )}
                       </div>
-                    ))}
+                    )})}
                   </div>
                 </DashboardCard>
 
@@ -707,7 +739,7 @@ export default function DashboardPage() {
                   <div className="mt-6 rounded-2xl border border-white/[0.07] bg-black/20 p-5">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="rounded-lg border border-violet-400/15 bg-violet-400/[0.06] px-2.5 py-1 text-[9px] font-medium uppercase tracking-wider text-violet-300">
-                        {participant.track}
+                        {profile?.course || "AI & Machine Learning"}
                       </span>
 
                       <span className="rounded-lg border border-white/10 px-2.5 py-1 text-[9px] uppercase tracking-wider text-zinc-600">
@@ -726,7 +758,7 @@ export default function DashboardPage() {
                     </p>
 
                     <div className="mt-5 flex flex-wrap gap-2">
-                      {participant.skills
+                      {["Python", "React", "Node.js", "AI"]
                         .slice(0, 4)
                         .map((skill) => (
                           <span
