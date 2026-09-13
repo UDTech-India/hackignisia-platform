@@ -297,7 +297,7 @@ export default function RegisterPage() {
 
         if (
           parsed?.participation === "have-team" ||
-          parsed?.participation === "need-team"
+          parsed?.participation === "solo"
         ) {
           setParticipation(parsed.participation);
         }
@@ -395,18 +395,12 @@ export default function RegisterPage() {
       return next;
     });
 
-    if (type === "need-team") {
+    if (type === "solo") {
       setFormData((previous) => ({
         ...previous,
-        lookingForTeam: true,
         teamMode: "",
         teamName: "",
         teamCode: "",
-      }));
-    } else {
-      setFormData((previous) => ({
-        ...previous,
-        lookingForTeam: false,
       }));
     }
   };
@@ -909,7 +903,7 @@ export default function RegisterPage() {
       // since email verification is disabled and they are automatically logged in.
       router.push("/dashboard");
 
-    } catch (error: any) {
+    } catch (error:any) {
       console.error(
         "Registration submission failed:",
         error
