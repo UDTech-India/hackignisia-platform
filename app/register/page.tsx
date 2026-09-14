@@ -16,7 +16,7 @@ import { Eye, EyeOff } from "lucide-react";
    TYPES
 ========================================================= */
 
-type ParticipationType = "have-team" | "solo" | "";
+type ParticipationType = "have-team" | "need-team" | "solo" | "";
 
 type TeamMode = "create" | "join" | "";
 
