@@ -24,7 +24,7 @@ import {
   X,
   Zap,
 } from "lucide-react";
-import { useEffect, useState, type ReactNode } from "react";
+import { useEffect, useMemo, useState, type ReactNode } from "react";
 import { createClient } from "@/utils/supabase/client";
 import { useRouter } from "next/navigation";
 
@@ -59,29 +59,7 @@ type SidebarLinkProps = {
    Replace with Supabase data later.
 ========================================================= */
 
-// Removed hardcoded participant, team, and teamMembers
-
-const activities: Activity[] = [
-  {
-    icon: <CheckCircle2 size={16} />,
-    title: "Registration completed",
-    description:
-      "Your participant registration was submitted successfully.",
-    time: "Today",
-  },
-  {
-    icon: <Users size={16} />,
-    title: "Team created",
-    description: "You are registered with Team Vector.",
-    time: "Today",
-  },
-  {
-    icon: <Target size={16} />,
-    title: "Track selected",
-    description: "AI & Machine Learning",
-    time: "Today",
-  },
-];
+// Real activities are computed dynamically from user, team, and submission state
 
 const announcements = [
   {
@@ -96,13 +74,6 @@ const announcements = [
     description:
       "Participants can create a team or join an existing team using a team code.",
     date: "Aug 2026",
-    important: false,
-  },
-  {
-    title: "Hackathon updates",
-    description:
-      "Important event announcements will appear here.",
-    date: "Coming soon",
     important: false,
   },
 ];
@@ -140,6 +111,7 @@ export default function DashboardPage() {
   const [profile, setProfile] = useState<any>(null);
   const [teamData, setTeamData] = useState<any>(null);
   const [teamMembersList, setTeamMembersList] = useState<any[]>([]);
+  const [submissionData, setSubmissionData] = useState<any>(null);
   const supabase = createClient();
   const router = useRouter();
 
@@ -191,12 +163,68 @@ export default function DashboardPage() {
           );
           setTeamMembersList(sorted);
         }
+
+        const { data: subRes } = await supabase
+          .from("submissions")
+          .select("*")
+          .eq("team_id", myMember.team_id)
+          .maybeSingle();
+
+        if (subRes) {
+          setSubmissionData(subRes);
+        }
       }
 
       setLoading(false);
     }
     loadData();
   }, []);
+
+  const dynamicActivities: Activity[] = useMemo(() => {
+    const list: Activity[] = [
+      {
+        icon: <CheckCircle2 size={16} />,
+        title: "Registration completed",
+        description: "Your participant registration was submitted successfully.",
+        time: profile?.created_at
+          ? new Date(profile.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+          : "Completed",
+      },
+    ];
+
+    if (teamData) {
+      list.push({
+        icon: <Users size={16} />,
+        title: teamMembersList.some((m) => m.profile_id === profile?.id && m.is_leader)
+          ? "Team created"
+          : "Team joined",
+        description: `You are registered with ${teamData.name}.`,
+        time: teamData.created_at
+          ? new Date(teamData.created_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+          : "Active",
+      });
+    }
+
+    if (submissionData) {
+      list.push({
+        icon: submissionData.status === "submitted" ? <CheckCircle2 size={16} /> : <FileText size={16} />,
+        title: submissionData.status === "submitted" ? "Project submitted" : "Project draft saved",
+        description: submissionData.title || "Project in progress",
+        time: submissionData.submitted_at
+          ? new Date(submissionData.submitted_at).toLocaleDateString("en-US", { month: "short", day: "numeric" })
+          : (submissionData.status === "submitted" ? "Submitted" : "Draft"),
+      });
+    } else if (profile?.course) {
+      list.push({
+        icon: <Target size={16} />,
+        title: "Track selected",
+        description: profile.course,
+        time: "Selected",
+      });
+    }
+
+    return list;
+  }, [profile, teamData, teamMembersList, submissionData]);
 
   if (loading) {
     return (
@@ -327,7 +355,6 @@ export default function DashboardPage() {
               icon={<FileText size={17} />}
               label="Project"
               href="/dashboard/project"
-              badge="Soon"
               onClick={() => setSidebarOpen(false)}
             />
 
@@ -739,31 +766,49 @@ export default function DashboardPage() {
                   <div className="mt-6 rounded-2xl border border-white/[0.07] bg-black/20 p-5">
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="rounded-lg border border-violet-400/15 bg-violet-400/[0.06] px-2.5 py-1 text-[9px] font-medium uppercase tracking-wider text-violet-300">
-                        {profile?.course || "AI & Machine Learning"}
+                        {submissionData?.track || profile?.course || "Open Track"}
                       </span>
 
-                      <span className="rounded-lg border border-white/10 px-2.5 py-1 text-[9px] uppercase tracking-wider text-zinc-600">
-                        Draft
+                      <span
+                        className={`rounded-lg border px-2.5 py-1 text-[9px] uppercase tracking-wider ${
+                          submissionData?.status === "submitted"
+                            ? "border-emerald-400/20 bg-emerald-400/10 text-emerald-400"
+                            : submissionData
+                            ? "border-amber-400/20 bg-amber-400/10 text-amber-400"
+                            : "border-white/10 text-zinc-600"
+                        }`}
+                      >
+                        {submissionData?.status === "submitted"
+                          ? "Submitted"
+                          : submissionData
+                          ? "Draft"
+                          : "Not Started"}
                       </span>
                     </div>
 
                     <h3 className="mt-4 text-lg font-semibold">
-                      Build a meaningful AI-powered solution
+                      {submissionData?.title || "Build your hackathon project"}
                     </h3>
 
                     <p className="mt-2 max-w-2xl text-sm leading-6 text-zinc-600">
-                      Your project workspace will allow you to
-                      define your problem statement, solution,
-                      technology stack and final submission.
+                      {submissionData?.tagline ||
+                        submissionData?.problem_statement ||
+                        "Your project workspace allows you to define your problem statement, solution, technology stack and final submission."}
                     </p>
 
                     <div className="mt-5 flex flex-wrap gap-2">
-                      {["Python", "React", "Node.js", "AI"]
-                        .slice(0, 4)
-                        .map((skill) => (
+                      {(submissionData?.tech_stack
+                        ? submissionData.tech_stack
+                            .split(",")
+                            .map((s: string) => s.trim())
+                            .filter(Boolean)
+                        : ["Next.js", "Python", "Supabase", "AI"]
+                      )
+                        .slice(0, 5)
+                        .map((skill: string) => (
                           <span
                             key={skill}
-                            className="rounded-lg border border-white/[0.07] bg-white/[0.02] px-2.5 py-1.5 text-[10px] text-zinc-600"
+                            className="rounded-lg border border-white/[0.07] bg-white/[0.02] px-2.5 py-1.5 text-[10px] text-zinc-400"
                           >
                             {skill}
                           </span>
@@ -863,13 +908,13 @@ export default function DashboardPage() {
                   />
 
                   <div className="mt-6 space-y-5">
-                    {activities.map(
+                    {dynamicActivities.map(
                       (activity, index) => (
                         <ActivityItem
                           key={activity.title}
                           activity={activity}
                           last={
-                            index === activities.length - 1
+                            index === dynamicActivities.length - 1
                           }
                         />
                       )

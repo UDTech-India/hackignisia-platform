@@ -29,7 +29,8 @@ import {
   Zap,
 } from "lucide-react";
 
-import { ChangeEvent, FormEvent, useMemo, useState } from "react";
+import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
+import { createClient } from "@/utils/supabase/client";
 
 /* =========================================================
    TYPES
@@ -129,15 +130,95 @@ export default function ProjectPage() {
   >({});
 
   const [saved, setSaved] = useState(false);
+  const [isSaving, setIsSaving] = useState(false);
+  const [isSubmitting, setIsSubmitting] = useState(false);
 
-  const [submitted, setSubmitted] =
-    useState(false);
+  const [submissionId, setSubmissionId] = useState<string | null>(null);
+  const [teamId, setTeamId] = useState<string | null>(null);
+  const [isLeader, setIsLeader] = useState(true);
+  const [isSubmitted, setIsSubmitted] = useState(false);
+  const [confirmationView, setConfirmationView] = useState<"submitted" | "saved_draft" | null>(null);
 
-  const [isSaving, setIsSaving] =
-    useState(false);
+  const supabase = useMemo(() => createClient(), []);
 
-  const [isSubmitting, setIsSubmitting] =
-    useState(false);
+  useEffect(() => {
+    async function loadProjectData() {
+      try {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (!user) return;
+
+        const { data: member } = await supabase
+          .from("team_members")
+          .select("team_id, is_leader")
+          .eq("profile_id", user.id)
+          .eq("status", "accepted")
+          .maybeSingle();
+
+        if (member && member.team_id) {
+          setTeamId(member.team_id);
+          setIsLeader(Boolean(member.is_leader));
+
+          const { data: sub, error: subErr } = await supabase
+            .from("submissions")
+            .select("*")
+            .eq("team_id", member.team_id)
+            .maybeSingle();
+
+          if (subErr) {
+            console.error("Error loading submission:", subErr);
+          }
+
+          if (sub) {
+            setSubmissionId(sub.id);
+            setForm((prev) => ({
+              ...prev,
+              projectTitle: sub.title || prev.projectTitle,
+              tagline: sub.tagline || prev.tagline,
+              problemStatement: sub.problem_statement || prev.problemStatement,
+              targetUsers: sub.target_users || prev.targetUsers,
+              solution: sub.solution || prev.solution,
+              innovation: sub.innovation || prev.innovation,
+              techStack: sub.tech_stack || prev.techStack,
+              githubUrl: sub.github_url || prev.githubUrl,
+              demoUrl: sub.demo_url || prev.demoUrl,
+              videoUrl: sub.video_url || prev.videoUrl,
+            }));
+
+            if (sub.status === "submitted") {
+              setIsSubmitted(true);
+              setCurrentStep(5);
+            }
+
+            const { data: files } = await supabase
+              .from("submission_files")
+              .select("*")
+              .eq("submission_id", sub.id);
+
+            if (files && files.length > 0) {
+              const presFile = files.find(
+                (f) =>
+                  f.file_type?.includes("presentation") ||
+                  f.file_path.endsWith(".ppt") ||
+                  f.file_path.endsWith(".pptx") ||
+                  f.file_path.endsWith(".pdf")
+              );
+              if (presFile) {
+                setPresentation({
+                  name: presFile.file_path.split("/").pop() || "Presentation.pptx",
+                  size: 0,
+                  type: presFile.file_type || "application/pdf",
+                  file: null as any,
+                });
+              }
+            }
+          }
+        }
+      } catch (err) {
+        console.error("Error loading project data:", err);
+      }
+    }
+    loadProjectData();
+  }, [supabase]);
 
   /* =======================================================
      FORM HELPERS
@@ -285,14 +366,98 @@ export default function ProjectPage() {
   ======================================================= */
 
   async function saveDraft() {
+    if (!teamId) {
+      alert("No active team found. Please make sure you are part of a team.");
+      return;
+    }
     setIsSaving(true);
+    try {
+      let currentSubId = submissionId;
+      if (!currentSubId) {
+        const { data: inserted, error: insertErr } = await supabase
+          .from("submissions")
+          .insert([{
+            team_id: teamId,
+            title: form.projectTitle,
+            tagline: form.tagline,
+            problem_statement: form.problemStatement,
+            target_users: form.targetUsers,
+            solution: form.solution,
+            innovation: form.innovation,
+            tech_stack: form.techStack,
+            github_url: form.githubUrl || null,
+            demo_url: form.demoUrl || null,
+            video_url: form.videoUrl || null,
+            status: "draft",
+          }])
+          .select("id")
+          .single();
 
-    await new Promise((resolve) =>
-      setTimeout(resolve, 700)
-    );
+        if (insertErr) {
+          console.error("Error inserting draft submission:", insertErr);
+          alert("Failed to save draft: " + insertErr.message);
+          return;
+        }
 
-    setIsSaving(false);
-    setSaved(true);
+        if (inserted) {
+          currentSubId = inserted.id;
+          setSubmissionId(inserted.id);
+        }
+      } else {
+        const { error: updateErr } = await supabase
+          .from("submissions")
+          .update({
+            title: form.projectTitle,
+            tagline: form.tagline,
+            problem_statement: form.problemStatement,
+            target_users: form.targetUsers,
+            solution: form.solution,
+            innovation: form.innovation,
+            tech_stack: form.techStack,
+            github_url: form.githubUrl || null,
+            demo_url: form.demoUrl || null,
+            video_url: form.videoUrl || null,
+          })
+          .eq("id", currentSubId);
+
+        if (updateErr) {
+          console.error("Error updating draft submission:", updateErr);
+          alert("Failed to save draft: " + updateErr.message);
+          return;
+        }
+      }
+
+      if (presentation && presentation.file && currentSubId) {
+        const fileExt = presentation.name.split(".").pop();
+        const fileName = `${crypto.randomUUID()}.${fileExt}`;
+        const filePath = `${teamId}/${fileName}`;
+        const { error: upErr } = await supabase.storage.from("submissions").upload(filePath, presentation.file);
+        if (upErr) {
+          console.error("Storage upload error:", upErr);
+          alert("Warning: Could not upload file: " + upErr.message);
+        } else {
+          const { data: { user } } = await supabase.auth.getUser();
+          const { error: fileInsertErr } = await supabase.from("submission_files").insert([{
+            submission_id: currentSubId,
+            file_path: filePath,
+            file_type: presentation.type,
+            uploaded_by: user?.id,
+          }]);
+          if (fileInsertErr) {
+            console.error("Error recording submission file:", fileInsertErr);
+          }
+        }
+      }
+
+      setSaved(true);
+      setConfirmationView("saved_draft");
+      window.scrollTo({ top: 0, behavior: "smooth" });
+    } catch (e: any) {
+      console.error("Save draft exception:", e);
+      alert("An unexpected error occurred while saving: " + (e?.message || e));
+    } finally {
+      setIsSaving(false);
+    }
   }
 
   /* =======================================================
@@ -417,19 +582,120 @@ export default function ProjectPage() {
       return;
     }
 
+    if (!teamId) {
+      alert("No active team found. Please make sure you have joined or created a team.");
+      return;
+    }
+
+    if (!isLeader) {
+      alert("Only the team leader can submit the project.");
+      return;
+    }
+
     setIsSubmitting(true);
 
-    await new Promise((resolve) =>
-      setTimeout(resolve, 1200)
-    );
+    try {
+      let currentSubId = submissionId;
+      if (!currentSubId) {
+        const { data: inserted, error: insertErr } = await supabase
+          .from("submissions")
+          .insert([{
+            team_id: teamId,
+            title: form.projectTitle,
+            tagline: form.tagline,
+            problem_statement: form.problemStatement,
+            target_users: form.targetUsers,
+            solution: form.solution,
+            innovation: form.innovation,
+            tech_stack: form.techStack,
+            github_url: form.githubUrl || null,
+            demo_url: form.demoUrl || null,
+            video_url: form.videoUrl || null,
+            status: "draft",
+          }])
+          .select("id")
+          .single();
 
-    setIsSubmitting(false);
-    setSubmitted(true);
+        if (insertErr) {
+          console.error("Error creating submission:", insertErr);
+          alert("Submission failed: " + insertErr.message);
+          return;
+        }
 
-    window.scrollTo({
-      top: 0,
-      behavior: "smooth",
-    });
+        if (inserted) {
+          currentSubId = inserted.id;
+          setSubmissionId(inserted.id);
+        }
+      } else {
+        const { error: updateErr } = await supabase
+          .from("submissions")
+          .update({
+            title: form.projectTitle,
+            tagline: form.tagline,
+            problem_statement: form.problemStatement,
+            target_users: form.targetUsers,
+            solution: form.solution,
+            innovation: form.innovation,
+            tech_stack: form.techStack,
+            github_url: form.githubUrl || null,
+            demo_url: form.demoUrl || null,
+            video_url: form.videoUrl || null,
+          })
+          .eq("id", currentSubId);
+
+        if (updateErr) {
+          console.error("Error updating submission:", updateErr);
+          alert("Submission failed: " + updateErr.message);
+          return;
+        }
+      }
+
+      if (presentation && presentation.file && currentSubId) {
+        const fileExt = presentation.name.split(".").pop();
+        const fileName = `${crypto.randomUUID()}.${fileExt}`;
+        const filePath = `${teamId}/${fileName}`;
+        const { error: upErr } = await supabase.storage.from("submissions").upload(filePath, presentation.file);
+        if (upErr) {
+          console.error("Storage upload error:", upErr);
+          alert("Warning: Presentation upload failed: " + upErr.message);
+        } else {
+          const { data: { user } } = await supabase.auth.getUser();
+          const { error: fileInsertErr } = await supabase.from("submission_files").insert([{
+            submission_id: currentSubId,
+            file_path: filePath,
+            file_type: presentation.type,
+            uploaded_by: user?.id,
+          }]);
+          if (fileInsertErr) {
+            console.error("Error linking presentation file:", fileInsertErr);
+          }
+        }
+      }
+
+      if (currentSubId) {
+        const { error: rpcErr } = await supabase.rpc("submit_project", { p_submission_id: currentSubId });
+        if (rpcErr) {
+          console.error("submit_project RPC error:", rpcErr);
+          alert("Failed to submit project: " + rpcErr.message);
+          return;
+        }
+      } else {
+        alert("Submission ID was not generated. Please try again.");
+        return;
+      }
+
+      setIsSubmitted(true);
+      setConfirmationView("submitted");
+      window.scrollTo({
+        top: 0,
+        behavior: "smooth",
+      });
+    } catch (e: any) {
+      console.error("Error in handleSubmit:", e);
+      alert("An unexpected error occurred during submission: " + (e?.message || e));
+    } finally {
+      setIsSubmitting(false);
+    }
   }
 
   /* =======================================================
@@ -456,10 +722,91 @@ export default function ProjectPage() {
   }, [form, presentation]);
 
   /* =======================================================
-     SUBMITTED SCREEN
+     CONFIRMATION SCREENS
   ======================================================= */
 
-  if (submitted) {
+  if (confirmationView === "saved_draft") {
+    return (
+      <main className="min-h-screen bg-[#050505] text-white">
+        <Background />
+
+        <div className="relative mx-auto flex min-h-screen max-w-3xl items-center justify-center px-5 py-12">
+          <div className="w-full rounded-[32px] border border-white/[0.08] bg-white/[0.025] p-8 text-center shadow-2xl shadow-black/30 sm:p-12">
+            <div className="mx-auto flex h-20 w-20 items-center justify-center rounded-3xl bg-amber-400/10 text-amber-400">
+              <FileText size={42} />
+            </div>
+
+            <div className="mt-7 inline-flex items-center gap-2 rounded-full border border-amber-400/15 bg-amber-400/[0.05] px-3 py-1.5 text-[10px] font-semibold uppercase tracking-[0.16em] text-amber-400">
+              <Check size={12} />
+              Draft saved
+            </div>
+
+            <h1 className="mt-5 text-3xl font-bold tracking-tight sm:text-4xl">
+              Successfully saved as draft
+            </h1>
+
+            <p className="mx-auto mt-4 max-w-xl text-sm leading-7 text-zinc-500">
+              Your project details have been safely stored. You can return, make edits, and finalize your submission whenever you&apos;re ready before the deadline.
+            </p>
+
+            <div className="mx-auto mt-8 max-w-md rounded-2xl border border-white/[0.07] bg-black/20 p-5 text-left">
+              <div className="text-[9px] uppercase tracking-[0.18em] text-zinc-700">
+                Project
+              </div>
+
+              <div className="mt-2 text-sm font-semibold">
+                {form.projectTitle || "Untitled Project"}
+              </div>
+
+              <div className="mt-4 flex items-center justify-between border-t border-white/[0.06] pt-4">
+                <span className="text-xs text-zinc-600">
+                  Status
+                </span>
+
+                <span className="rounded-lg bg-amber-400/10 px-2.5 py-1 text-[10px] font-medium text-amber-400">
+                  Draft
+                </span>
+              </div>
+            </div>
+
+            <div className="mt-8 flex flex-col justify-center gap-3 sm:flex-row">
+              <Link
+                href="/dashboard"
+                className="inline-flex items-center justify-center gap-2 rounded-xl bg-violet-400 px-5 py-3 text-xs font-semibold text-black transition hover:bg-violet-300"
+              >
+                Back to dashboard
+                <ArrowRight size={15} />
+              </Link>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setConfirmationView(null);
+                  setCurrentStep(5);
+                }}
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 px-5 py-3 text-xs font-medium text-zinc-400 transition hover:border-white/20 hover:text-white"
+              >
+                View submission details
+              </button>
+
+              <button
+                type="button"
+                onClick={() => {
+                  setConfirmationView(null);
+                  setCurrentStep(1);
+                }}
+                className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 px-5 py-3 text-xs font-medium text-zinc-400 transition hover:border-white/20 hover:text-white"
+              >
+                Continue editing
+              </button>
+            </div>
+          </div>
+        </div>
+      </main>
+    );
+  }
+
+  if (confirmationView === "submitted") {
     return (
       <main className="min-h-screen bg-[#050505] text-white">
         <Background />
@@ -493,7 +840,7 @@ export default function ProjectPage() {
               </div>
 
               <div className="mt-2 text-sm font-semibold">
-                {form.projectTitle}
+                {form.projectTitle || "Untitled Project"}
               </div>
 
               <div className="mt-4 flex items-center justify-between border-t border-white/[0.06] pt-4">
@@ -518,7 +865,10 @@ export default function ProjectPage() {
 
               <button
                 type="button"
-                onClick={() => setSubmitted(false)}
+                onClick={() => {
+                  setConfirmationView(null);
+                  setCurrentStep(5);
+                }}
                 className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 px-5 py-3 text-xs font-medium text-zinc-400 transition hover:border-white/20 hover:text-white"
               >
                 View submission
@@ -565,32 +915,41 @@ export default function ProjectPage() {
             </div>
 
             <div className="flex items-center gap-2">
-              {saved && (
-                <div className="hidden items-center gap-2 rounded-xl border border-emerald-400/10 bg-emerald-400/[0.04] px-3 py-2 text-[10px] text-emerald-400 sm:flex">
-                  <Check size={12} />
-                  Draft saved
+              {isSubmitted ? (
+                <div className="flex items-center gap-2 rounded-xl border border-emerald-400/20 bg-emerald-400/10 px-3.5 py-2 text-xs font-medium text-emerald-400">
+                  <CheckCircle2 size={14} />
+                  <span>Submitted</span>
                 </div>
+              ) : (
+                <>
+                  {saved && (
+                    <div className="hidden items-center gap-2 rounded-xl border border-emerald-400/10 bg-emerald-400/[0.04] px-3 py-2 text-[10px] text-emerald-400 sm:flex">
+                      <Check size={12} />
+                      Draft saved
+                    </div>
+                  )}
+
+                  <button
+                    type="button"
+                    onClick={saveDraft}
+                    disabled={isSaving}
+                    className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.025] px-3.5 py-2.5 text-xs font-medium text-zinc-400 transition hover:border-white/20 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {isSaving ? (
+                      <Loader2
+                        size={14}
+                        className="animate-spin"
+                      />
+                    ) : (
+                      <Save size={14} />
+                    )}
+
+                    <span className="hidden sm:inline">
+                      Save draft
+                    </span>
+                  </button>
+                </>
               )}
-
-              <button
-                type="button"
-                onClick={saveDraft}
-                disabled={isSaving}
-                className="inline-flex items-center gap-2 rounded-xl border border-white/10 bg-white/[0.025] px-3.5 py-2.5 text-xs font-medium text-zinc-400 transition hover:border-white/20 hover:text-white disabled:cursor-not-allowed disabled:opacity-50"
-              >
-                {isSaving ? (
-                  <Loader2
-                    size={14}
-                    className="animate-spin"
-                  />
-                ) : (
-                  <Save size={14} />
-                )}
-
-                <span className="hidden sm:inline">
-                  Save draft
-                </span>
-              </button>
             </div>
           </div>
         </header>
@@ -663,23 +1022,21 @@ export default function ProjectPage() {
                   currentStep === step.id;
 
                 const complete =
-                  currentStep > step.id;
+                  isSubmitted || currentStep > step.id;
 
                 return (
                   <button
                     key={step.id}
                     type="button"
                     onClick={() => {
-                      if (
-                        step.id < currentStep
-                      ) {
+                      if (!isSubmitted && step.id < currentStep) {
                         setCurrentStep(
                           step.id as Step
                         );
                       }
                     }}
                     disabled={
-                      step.id > currentStep
+                      isSubmitted ? step.id !== 5 : step.id > currentStep
                     }
                     className={`group relative flex items-center gap-3 rounded-2xl p-3 text-left transition ${
                       active
@@ -798,56 +1155,96 @@ export default function ProjectPage() {
                     onEdit={(step) =>
                       setCurrentStep(step)
                     }
+                    readOnly={isSubmitted}
                   /> 
                 )}
 
                 {/* NAVIGATION */}
 
                 <div className="mt-6 flex flex-col-reverse justify-between gap-3 border-t border-white/[0.07] pt-6 sm:flex-row">
-                  <button
-                    type="button"
-                    onClick={previousStep}
-                    disabled={
-                      currentStep === 1
-                    }
-                    className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 px-5 py-3 text-xs font-medium text-zinc-500 transition hover:border-white/20 hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
-                  >
-                    <ArrowLeft size={14} />
-                    Previous
-                  </button>
+                  {isSubmitted ? (
+                    <>
+                      <Link
+                        href="/dashboard"
+                        className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 px-5 py-3 text-xs font-medium text-zinc-400 transition hover:border-white/20 hover:text-white"
+                      >
+                        <ArrowLeft size={14} />
+                        Back to dashboard
+                      </Link>
 
-                  {currentStep < 5 ? (
-                    <button
-                      type="button"
-                      onClick={nextStep}
-                      className="inline-flex items-center justify-center gap-2 rounded-xl bg-violet-400 px-6 py-3 text-xs font-semibold text-black transition hover:bg-violet-300"
-                    >
-                      Continue
-                      <ArrowRight size={14} />
-                    </button>
+                      <button
+                        type="button"
+                        onClick={() => setConfirmationView("submitted")}
+                        className="inline-flex items-center justify-center gap-2 rounded-xl bg-violet-400 px-6 py-3 text-xs font-semibold text-black transition hover:bg-violet-300"
+                      >
+                        View confirmation receipt
+                        <ArrowRight size={14} />
+                      </button>
+                    </>
                   ) : (
-                    <button
-                      type="submit"
-                      disabled={
-                        isSubmitting
-                      }
-                      className="inline-flex items-center justify-center gap-2 rounded-xl bg-violet-400 px-6 py-3 text-xs font-semibold text-black transition hover:bg-violet-300 disabled:cursor-not-allowed disabled:opacity-60"
-                    >
-                      {isSubmitting ? (
-                        <>
-                          <Loader2
-                            size={14}
-                            className="animate-spin"
-                          />
-                          Submitting...
-                        </>
+                    <>
+                      <button
+                        type="button"
+                        onClick={previousStep}
+                        disabled={
+                          currentStep === 1
+                        }
+                        className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 px-5 py-3 text-xs font-medium text-zinc-500 transition hover:border-white/20 hover:text-white disabled:cursor-not-allowed disabled:opacity-30"
+                      >
+                        <ArrowLeft size={14} />
+                        Previous
+                      </button>
+
+                      {currentStep < 5 ? (
+                        <button
+                          type="button"
+                          onClick={nextStep}
+                          className="inline-flex items-center justify-center gap-2 rounded-xl bg-violet-400 px-6 py-3 text-xs font-semibold text-black transition hover:bg-violet-300"
+                        >
+                          Continue
+                          <ArrowRight size={14} />
+                        </button>
                       ) : (
-                        <>
-                          Submit project
-                          <Send size={14} />
-                        </>
+                        <div className="flex flex-col gap-2 sm:flex-row sm:items-center">
+                          <button
+                            type="button"
+                            onClick={saveDraft}
+                            disabled={isSaving}
+                            className="inline-flex items-center justify-center gap-2 rounded-xl border border-white/10 bg-white/[0.04] px-5 py-3 text-xs font-medium text-zinc-300 transition hover:border-white/20 hover:text-white disabled:opacity-50"
+                          >
+                            {isSaving ? (
+                              <Loader2 size={14} className="animate-spin" />
+                            ) : (
+                              <Save size={14} />
+                            )}
+                            Save as draft
+                          </button>
+
+                          <button
+                            type="submit"
+                            disabled={
+                              isSubmitting
+                            }
+                            className="inline-flex items-center justify-center gap-2 rounded-xl bg-violet-400 px-6 py-3 text-xs font-semibold text-black transition hover:bg-violet-300 disabled:cursor-not-allowed disabled:opacity-60"
+                          >
+                            {isSubmitting ? (
+                              <>
+                                <Loader2
+                                  size={14}
+                                  className="animate-spin"
+                                />
+                                Submitting...
+                              </>
+                            ) : (
+                              <>
+                                Submit project
+                                <Send size={14} />
+                              </>
+                            )}
+                          </button>
+                        </div>
                       )}
-                    </button>
+                    </>
                   )}
                 </div>
               </div>
@@ -869,33 +1266,43 @@ export default function ProjectPage() {
                   </div>
 
                   <div className="mt-5 flex items-center gap-3">
-                    <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-amber-400/10 text-amber-400">
-                      <FileText size={18} />
+                    <div className={`flex h-10 w-10 items-center justify-center rounded-xl ${
+                      isSubmitted
+                        ? "bg-emerald-400/10 text-emerald-400"
+                        : "bg-amber-400/10 text-amber-400"
+                    }`}>
+                      {isSubmitted ? (
+                        <CheckCircle2 size={18} />
+                      ) : (
+                        <FileText size={18} />
+                      )}
                     </div>
 
                     <div>
                       <div className="text-sm font-semibold">
-                        Draft
+                        {isSubmitted ? "Submitted" : "Draft"}
                       </div>
 
                       <div className="mt-0.5 text-[10px] text-zinc-700">
-                        Not submitted yet
+                        {isSubmitted ? "Recorded for judging" : "Not submitted yet"}
                       </div>
                     </div>
                   </div>
 
                   <div className="mt-5 h-1.5 overflow-hidden rounded-full bg-white/[0.06]">
                     <div
-                      className="h-full rounded-full bg-violet-400 transition-all"
+                      className={`h-full rounded-full transition-all ${
+                        isSubmitted ? "bg-emerald-400" : "bg-violet-400"
+                      }`}
                       style={{
-                        width: `${completion}%`,
+                        width: isSubmitted ? "100%" : `${completion}%`,
                       }}
                     />
                   </div>
 
                   <div className="mt-2 flex justify-between text-[9px] text-zinc-700">
                     <span>Progress</span>
-                    <span>{completion}%</span>
+                    <span>{isSubmitted ? "100%" : `${completion}%`}</span>
                   </div>
                 </div>
 
@@ -1494,10 +1901,7 @@ function StepFour({
         </div>
 
         <InfoBox>
-          The uploaded files are currently held in
-          the browser only. Anusha can connect
-          this upload component to Supabase Storage
-          later.
+          Ensure your presentation file is finalized and contains your complete problem statement, solution architecture, implementation details, and tech stack.
         </InfoBox>
       </div>
     </FormCard>
@@ -1513,17 +1917,23 @@ function StepFive({
   presentation,
   demoVideo,
   onEdit,
+  readOnly,
 }: {
   form: FormData;
   presentation: UploadedFile | null;
   demoVideo: UploadedFile | null;
   onEdit: (step: Step) => void;
+  readOnly?: boolean;
 }) {
   return (
     <FormCard
       eyebrow="Step 05"
-      title="Review your submission"
-      description="Check everything carefully before submitting your project to the organizers."
+      title={readOnly ? "Submission details" : "Review your submission"}
+      description={
+        readOnly
+          ? "View all submitted project details and uploaded resources."
+          : "Check everything carefully before submitting your project to the organizers."
+      }
       icon={<FileCheck2 size={17} />}
     >
       <div className="space-y-5">
@@ -1531,6 +1941,7 @@ function StepFive({
           title="Project basics"
           step={1}
           onEdit={onEdit}
+          readOnly={readOnly}
         >
           <ReviewRow
             label="Project title"
@@ -1549,6 +1960,7 @@ function StepFive({
           title="Problem & solution"
           step={2}
           onEdit={onEdit}
+          readOnly={readOnly}
         >
           <ReviewRow
             label="Problem"
@@ -1581,6 +1993,7 @@ function StepFive({
           title="Technology"
           step={3}
           onEdit={onEdit}
+          readOnly={readOnly}
         >
           <ReviewRow
             label="Technology stack"
@@ -1602,6 +2015,7 @@ function StepFive({
           title="Resources"
           step={4}
           onEdit={onEdit}
+          readOnly={readOnly}
         >
           <ReviewRow
             label="GitHub"
@@ -1643,28 +2057,47 @@ function StepFive({
           />
         </ReviewSection>
 
-        <div className="rounded-2xl border border-amber-400/10 bg-amber-400/[0.025] p-5">
-          <div className="flex gap-3">
-            <Info
-              size={16}
-              className="mt-0.5 shrink-0 text-amber-400"
-            />
-
-            <div>
-              <div className="text-xs font-semibold text-amber-300">
-                Before you submit
+        {readOnly ? (
+          <div className="rounded-2xl border border-emerald-400/20 bg-emerald-400/[0.04] p-5">
+            <div className="flex gap-3">
+              <CheckCircle2
+                size={16}
+                className="mt-0.5 shrink-0 text-emerald-400"
+              />
+              <div>
+                <div className="text-xs font-semibold text-emerald-300">
+                  Project submission finalized
+                </div>
+                <p className="mt-1.5 text-[10px] leading-5 text-zinc-400">
+                  Your project has been submitted and locked for evaluation. Organizers and judges have full access to your submitted materials.
+                </p>
               </div>
-
-              <p className="mt-1.5 text-[10px] leading-5 text-zinc-600">
-                Make sure your GitHub repository is
-                accessible and your presentation
-                contains accurate project information.
-                After submission, changes may be
-                restricted according to the event rules.
-              </p>
             </div>
           </div>
-        </div>
+        ) : (
+          <div className="rounded-2xl border border-amber-400/10 bg-amber-400/[0.025] p-5">
+            <div className="flex gap-3">
+              <Info
+                size={16}
+                className="mt-0.5 shrink-0 text-amber-400"
+              />
+
+              <div>
+                <div className="text-xs font-semibold text-amber-300">
+                  Before you submit
+                </div>
+
+                <p className="mt-1.5 text-[10px] leading-5 text-zinc-600">
+                  Make sure your GitHub repository is
+                  accessible and your presentation
+                  contains accurate project information.
+                  After submission, changes may be
+                  restricted according to the event rules.
+                </p>
+              </div>
+            </div>
+          </div>
+        )}
       </div>
     </FormCard>
   );
@@ -1934,11 +2367,13 @@ function ReviewSection({
   step,
   onEdit,
   children,
+  readOnly,
 }: {
   title: string;
   step: Step;
-  onEdit: (step: Step) => void;
+  onEdit?: (step: Step) => void;
   children: React.ReactNode;
+  readOnly?: boolean;
 }) {
   return (
     <div className="rounded-2xl border border-white/[0.07] bg-black/20 p-5">
@@ -1947,13 +2382,15 @@ function ReviewSection({
           {title}
         </h3>
 
-        <button
-          type="button"
-          onClick={() => onEdit(step)}
-          className="text-[9px] font-medium text-violet-400 hover:text-violet-300"
-        >
-          Edit
-        </button>
+        {!readOnly && onEdit && (
+          <button
+            type="button"
+            onClick={() => onEdit(step)}
+            className="text-[9px] font-medium text-violet-400 hover:text-violet-300"
+          >
+            Edit
+          </button>
+        )}
       </div>
 
       <div className="mt-4 space-y-4">

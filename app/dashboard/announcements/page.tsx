@@ -59,7 +59,7 @@ const announcements: Announcement[] = [
       "The project workspace will be used to prepare and submit your hackathon project.",
     content:
       "Your Project Dashboard will contain the project details, problem statement, proposed solution, technology stack, PPT upload and final submission information. Make sure all required fields are completed before submitting.",
-    date: "Coming Soon",
+    date: "Aug 2026",
     category: "Submission",
   },
   {
@@ -69,7 +69,7 @@ const announcements: Announcement[] = [
       "Official hackathon dates and detailed event timeline will be announced soon.",
     content:
       "The official schedule will include registration, team formation, project submission, judging and results. Participants will receive updates through the dashboard.",
-    date: "Coming Soon",
+    date: "Aug 2026",
     category: "Event",
   },
   {
@@ -79,7 +79,7 @@ const announcements: Announcement[] = [
       "Keep your profile and contact information updated to receive important event communications.",
     content:
       "Participants should ensure that their email address, mobile number, college, course and other profile information are accurate. Important communication may be shared through the registered contact details.",
-    date: "Coming Soon",
+    date: "Aug 2026",
     category: "Information",
   },
 ];
