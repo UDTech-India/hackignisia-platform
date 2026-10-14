@@ -57,5 +57,47 @@ export async function updateSession(request: NextRequest) {
     }
   }
 
+  // Guard all /judge routes — must be authenticated AND have platform_role in ('judge', 'admin')
+  if (pathname.startsWith('/judge')) {
+    if (!user) {
+      const url = request.nextUrl.clone()
+      url.pathname = '/login'
+      return NextResponse.redirect(url)
+    }
+
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('platform_role')
+      .eq('id', user.id)
+      .single()
+
+    if (!profile || (profile.platform_role !== 'judge' && profile.platform_role !== 'admin')) {
+      const url = request.nextUrl.clone()
+      url.pathname = '/dashboard'
+      return NextResponse.redirect(url)
+    }
+  }
+
+  // Guard all /mentor routes — must be authenticated AND have platform_role in ('mentor', 'admin')
+  if (pathname.startsWith('/mentor')) {
+    if (!user) {
+      const url = request.nextUrl.clone()
+      url.pathname = '/login'
+      return NextResponse.redirect(url)
+    }
+
+    const { data: profile } = await supabase
+      .from('profiles')
+      .select('platform_role')
+      .eq('id', user.id)
+      .single()
+
+    if (!profile || (profile.platform_role !== 'mentor' && profile.platform_role !== 'admin')) {
+      const url = request.nextUrl.clone()
+      url.pathname = '/dashboard'
+      return NextResponse.redirect(url)
+    }
+  }
+
   return supabaseResponse
 }

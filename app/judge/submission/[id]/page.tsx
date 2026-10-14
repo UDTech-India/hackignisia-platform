@@ -12,7 +12,7 @@ type Criterion = {
   max: number;
 };
 
-const RUBRIC: Criterion[] = [
+const DEFAULT_RUBRIC: Criterion[] = [
   { key: "innovation", label: "Innovation & Creativity", max: 25 },
   { key: "technical", label: "Technical Complexity", max: 25 },
   { key: "impact", label: "Impact & Viability", max: 25 },
@@ -24,6 +24,7 @@ export default function SubmissionEvaluation({ params }: { params: { id: string 
   const supabase = createClient();
   
   const [submission, setSubmission] = useState<any>(null);
+  const [rubric, setRubric] = useState<Criterion[]>(DEFAULT_RUBRIC);
   const [evaluationId, setEvaluationId] = useState<string | null>(null);
   const [scores, setScores] = useState<Record<string, number>>({});
   const [comments, setComments] = useState("");
@@ -47,7 +48,7 @@ export default function SubmissionEvaluation({ params }: { params: { id: string 
           .from("submissions")
           .select(`
             *,
-            teams ( name ),
+            teams ( name, event_id ),
             evaluations (*)
           `)
           .eq("id", params.id)
@@ -55,6 +56,28 @@ export default function SubmissionEvaluation({ params }: { params: { id: string 
 
         if (sub) {
           setSubmission(sub);
+          const teamEventId = Array.isArray(sub.teams) ? sub.teams[0]?.event_id : sub.teams?.event_id;
+          if (teamEventId) {
+            const { data: rubricData } = await supabase
+              .from("event_rubrics")
+              .select("criteria")
+              .eq("event_id", teamEventId)
+              .maybeSingle();
+
+            if (rubricData?.criteria && typeof rubricData.criteria === "object") {
+              const loadedRubric: Criterion[] = Object.entries(rubricData.criteria).map(
+                ([k, v]: [string, any]) => ({
+                  key: k,
+                  label: v?.label || k,
+                  max: typeof v?.max === "number" ? v.max : 25,
+                })
+              );
+              if (loadedRubric.length > 0) {
+                setRubric(loadedRubric);
+              }
+            }
+          }
+
           const evalRow = sub.evaluations?.[0];
           if (evalRow) {
             setEvaluationId(evalRow.id);
@@ -85,10 +108,18 @@ export default function SubmissionEvaluation({ params }: { params: { id: string 
       const { data: { user } } = await supabase.auth.getUser();
       if (!user) return;
       
+      // Omit keys left empty or invalid
+      const cleanScores: Record<string, number> = {};
+      for (const [k, v] of Object.entries(scores)) {
+        if (typeof v === "number" && !isNaN(v) && Number.isFinite(v)) {
+          cleanScores[k] = v;
+        }
+      }
+
       const payload = {
         submission_id: params.id,
         judge_id: user.id,
-        scores,
+        scores: cleanScores,
         comments,
         status: "draft"
       };
@@ -129,15 +160,34 @@ export default function SubmissionEvaluation({ params }: { params: { id: string 
   }
 
   const handleScoreChange = (key: string, val: string, max: number) => {
-    let num = parseInt(val) || 0;
+    if (val === "" || val === null || val === undefined) {
+      setScores(prev => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+      setSaved(false);
+      return;
+    }
+    const parsed = Number(val);
+    if (isNaN(parsed)) {
+      setScores(prev => {
+        const next = { ...prev };
+        delete next[key];
+        return next;
+      });
+      setSaved(false);
+      return;
+    }
+    let num = parsed;
     if (num > max) num = max;
     if (num < 0) num = 0;
     setScores(prev => ({ ...prev, [key]: num }));
     setSaved(false);
   };
 
-  const currentTotal = Object.values(scores).reduce((a, b) => a + b, 0);
-  const maxTotal = RUBRIC.reduce((a, b) => a + b.max, 0);
+  const currentTotal = Object.values(scores).reduce((a, b) => a + (typeof b === "number" && !isNaN(b) ? b : 0), 0);
+  const maxTotal = rubric.reduce((a, b) => a + b.max, 0);
 
   if (isLoading) {
     return <div className="flex h-screen items-center justify-center bg-[#050505] text-white">Loading...</div>;
@@ -222,7 +272,7 @@ export default function SubmissionEvaluation({ params }: { params: { id: string 
             )}
 
             <fieldset disabled={isFinal} className="space-y-6">
-              {RUBRIC.map(crit => (
+              {rubric.map(crit => (
                 <div key={crit.key}>
                   <div className="flex justify-between items-end mb-2">
                     <label className="text-sm font-medium text-zinc-300">{crit.label}</label>
@@ -232,7 +282,7 @@ export default function SubmissionEvaluation({ params }: { params: { id: string 
                     type="number"
                     min="0"
                     max={crit.max}
-                    value={scores[crit.key] || ""}
+                    value={scores[crit.key] !== undefined ? scores[crit.key] : ""}
                     onChange={(e) => handleScoreChange(crit.key, e.target.value, crit.max)}
                     className="w-full rounded-xl border border-white/10 bg-white/5 p-3 text-white focus:border-violet-500 focus:ring-1 focus:ring-violet-500 outline-none transition disabled:opacity-50"
                   />

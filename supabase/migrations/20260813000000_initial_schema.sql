@@ -104,7 +104,55 @@ CREATE TABLE public.profiles (
 
 
 -- ============================================================================
--- 3. AUTO CREATE PROFILE AFTER AUTH SIGNUP
+-- 3. EVENTS
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS public.events (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  slug text UNIQUE NOT NULL,
+  name text NOT NULL,
+  description text,
+  is_active boolean NOT NULL DEFAULT true,
+  registration_opens_at timestamptz,
+  registration_closes_at timestamptz,
+  submission_deadline_at timestamptz,
+  judging_starts_at timestamptz,
+  judging_ends_at timestamptz,
+  results_at timestamptz,
+  created_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- ============================================================================
+-- 4. TEAMS
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS public.teams (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  event_id uuid NOT NULL REFERENCES public.events(id) ON DELETE CASCADE,
+  name text NOT NULL,
+  team_code text UNIQUE NOT NULL,
+  max_members integer NOT NULL DEFAULT 5,
+  created_by uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  created_at timestamptz NOT NULL DEFAULT now(),
+  updated_at timestamptz NOT NULL DEFAULT now()
+);
+
+-- ============================================================================
+-- 5. TEAM MEMBERS
+-- ============================================================================
+
+CREATE TABLE IF NOT EXISTS public.team_members (
+  id uuid PRIMARY KEY DEFAULT gen_random_uuid(),
+  team_id uuid NOT NULL REFERENCES public.teams(id) ON DELETE CASCADE,
+  profile_id uuid NOT NULL REFERENCES public.profiles(id) ON DELETE CASCADE,
+  is_leader boolean NOT NULL DEFAULT false,
+  status public.team_member_status NOT NULL DEFAULT 'pending',
+  joined_at timestamptz NOT NULL DEFAULT now(),
+  UNIQUE (team_id, profile_id)
+);
+
+-- ============================================================================
+-- 6. AUTO CREATE PROFILE AFTER AUTH SIGNUP
 -- ============================================================================
 
 CREATE OR REPLACE FUNCTION public.handle_new_user()
@@ -152,8 +200,5 @@ EXECUTE FUNCTION public.handle_new_user();
 
 
 -- ============================================================================
--- ============================================================================
--- End of Day 2 migration. Migration 2 adds team-leadership automation,
--- RLS helper functions, and admin policies on top of this.
--- ============================================================================
+-- End of Day 2 migration.
 -- ============================================================================

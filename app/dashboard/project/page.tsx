@@ -139,6 +139,9 @@ export default function ProjectPage() {
   const [isSubmitted, setIsSubmitted] = useState(false);
   const [confirmationView, setConfirmationView] = useState<"submitted" | "saved_draft" | null>(null);
 
+  const [selectedTrack, setSelectedTrack] = useState<string>("AI & Machine Learning");
+  const [availableTracks, setAvailableTracks] = useState<{ id: string; name: string }[]>([]);
+
   const supabase = useMemo(() => createClient(), []);
 
   useEffect(() => {
@@ -146,6 +149,16 @@ export default function ProjectPage() {
       try {
         const { data: { user } } = await supabase.auth.getUser();
         if (!user) return;
+
+        // Load available tracks from public.tracks
+        const { data: tracksData } = await supabase
+          .from("tracks")
+          .select("id, name")
+          .order("name", { ascending: true });
+
+        if (tracksData && tracksData.length > 0) {
+          setAvailableTracks(tracksData);
+        }
 
         const { data: member } = await supabase
           .from("team_members")
@@ -170,6 +183,9 @@ export default function ProjectPage() {
 
           if (sub) {
             setSubmissionId(sub.id);
+            if (sub.track) {
+              setSelectedTrack(sub.track);
+            }
             setForm((prev) => ({
               ...prev,
               projectTitle: sub.title || prev.projectTitle,
@@ -388,6 +404,7 @@ export default function ProjectPage() {
             github_url: form.githubUrl || null,
             demo_url: form.demoUrl || null,
             video_url: form.videoUrl || null,
+            track: selectedTrack || null,
             status: "draft",
           }])
           .select("id")
@@ -417,6 +434,7 @@ export default function ProjectPage() {
             github_url: form.githubUrl || null,
             demo_url: form.demoUrl || null,
             video_url: form.videoUrl || null,
+            track: selectedTrack || null,
           })
           .eq("id", currentSubId);
 
@@ -611,6 +629,7 @@ export default function ProjectPage() {
             github_url: form.githubUrl || null,
             demo_url: form.demoUrl || null,
             video_url: form.videoUrl || null,
+            track: selectedTrack || null,
             status: "draft",
           }])
           .select("id")
@@ -640,6 +659,7 @@ export default function ProjectPage() {
             github_url: form.githubUrl || null,
             demo_url: form.demoUrl || null,
             video_url: form.videoUrl || null,
+            track: selectedTrack || null,
           })
           .eq("id", currentSubId);
 
@@ -1102,6 +1122,9 @@ export default function ProjectPage() {
                     form={form}
                     updateField={updateField}
                     errors={errors}
+                    selectedTrack={selectedTrack}
+                    setSelectedTrack={setSelectedTrack}
+                    availableTracks={availableTracks}
                   />
                 )}
 
@@ -1148,6 +1171,7 @@ export default function ProjectPage() {
                 {currentStep === 5 && (
                   <StepFive
                     form={form}
+                    selectedTrack={selectedTrack}
                     presentation={
                       presentation
                     }
@@ -1444,6 +1468,9 @@ function StepOne({
   form,
   updateField,
   errors,
+  selectedTrack,
+  setSelectedTrack,
+  availableTracks,
 }: {
   form: FormData;
   updateField: (
@@ -1451,6 +1478,9 @@ function StepOne({
     value: string
   ) => void;
   errors: Record<string, string>;
+  selectedTrack: string;
+  setSelectedTrack: (track: string) => void;
+  availableTracks: { id: string; name: string }[];
 }) {
   return (
     <FormCard
@@ -1496,10 +1526,30 @@ function StepOne({
             value="HackIGNISIA 2026"
           />
 
-          <ReadOnlyField
-            label="Selected track"
-            value="AI & Machine Learning"
-          />
+          <div>
+            <label className="mb-2 block text-xs font-medium text-zinc-300">
+              Selected track
+              <span className="ml-1 text-violet-400">*</span>
+            </label>
+            {availableTracks.length > 0 ? (
+              <select
+                value={selectedTrack}
+                onChange={(e) => setSelectedTrack(e.target.value)}
+                className="w-full rounded-xl border border-white/10 bg-white/[0.04] px-4 py-3 text-xs text-white focus:border-violet-400 focus:outline-none"
+              >
+                {availableTracks.map((t) => (
+                  <option key={t.id} value={t.name} className="bg-zinc-900 text-white">
+                    {t.name}
+                  </option>
+                ))}
+              </select>
+            ) : (
+              <ReadOnlyField
+                label="Selected track"
+                value={selectedTrack}
+              />
+            )}
+          </div>
         </div>
 
         <InfoBox>
@@ -1917,9 +1967,11 @@ function StepFive({
   presentation,
   demoVideo,
   onEdit,
+  selectedTrack,
   readOnly,
 }: {
   form: FormData;
+  selectedTrack: string;
   presentation: UploadedFile | null;
   demoVideo: UploadedFile | null;
   onEdit: (step: Step) => void;
@@ -1953,6 +2005,11 @@ function StepFive({
           <ReviewRow
             label="Tagline"
             value={form.tagline}
+          />
+
+          <ReviewRow
+            label="Selected track"
+            value={selectedTrack}
           />
         </ReviewSection>
 

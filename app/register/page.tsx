@@ -241,6 +241,18 @@ export default function RegisterPage() {
   const [showClearDraft, setShowClearDraft] =
     useState(false);
 
+  const [availableTracks, setAvailableTracks] = useState<string[]>(trackOptions);
+
+  useEffect(() => {
+    async function loadTracks() {
+      const { data } = await supabase.from("tracks").select("name").order("name", { ascending: true });
+      if (data && data.length > 0) {
+        setAvailableTracks(data.map((t) => t.name));
+      }
+    }
+    loadTracks();
+  }, [supabase]);
+
   /* =====================================================
      AUTH CHECK (REDIRECT IF LOGGED IN)
   ===================================================== */
@@ -1778,7 +1790,7 @@ export default function RegisterPage() {
                         value
                       )
                     }
-                    options={trackOptions}
+                    options={availableTracks}
                     placeholder="Select preferred track"
                     error={
                       errors.preferredTrack
