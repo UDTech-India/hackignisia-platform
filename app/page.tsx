@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useState } from "react";
 
 export default function Home() {
@@ -24,8 +25,15 @@ export default function Home() {
             className="flex items-center gap-3"
             onClick={closeMobileMenu}
           >
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white text-sm font-black text-black">
-              H
+            <div className="relative flex h-9 w-9 items-center justify-center overflow-hidden rounded-lg bg-white p-0.5 shadow-sm">
+              <Image
+                src="/logo.png"
+                alt="HackIGNISIA Logo"
+                width={36}
+                height={36}
+                className="h-full w-full object-contain"
+                priority
+              />
             </div>
 
             <div>
@@ -1358,8 +1366,14 @@ export default function Home() {
                 href="/"
                 className="inline-flex items-center gap-3"
               >
-                <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white text-sm font-black text-black">
-                  H
+                <div className="relative flex h-9 w-9 items-center justify-center overflow-hidden rounded-lg bg-white p-0.5 shadow-sm">
+                  <Image
+                    src="/logo.png"
+                    alt="HackIGNISIA Logo"
+                    width={36}
+                    height={36}
+                    className="h-full w-full object-contain"
+                  />
                 </div>
 
                 <div>

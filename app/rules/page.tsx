@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import { useState } from "react";
 
 export default function RulesPage() {
@@ -16,8 +17,15 @@ export default function RulesPage() {
       <header className="sticky top-0 z-50 border-b border-white/10 bg-black/80 backdrop-blur-xl">
         <div className="container flex h-16 items-center justify-between">
           <Link href="/" className="flex items-center gap-3" onClick={closeMobileMenu}>
-            <div className="flex h-9 w-9 items-center justify-center rounded-lg bg-white text-sm font-black text-black">
-              H
+            <div className="relative flex h-9 w-9 items-center justify-center overflow-hidden rounded-lg bg-white p-0.5 shadow-sm">
+              <Image
+                src="/logo.png"
+                alt="HackIGNISIA Logo"
+                width={36}
+                height={36}
+                className="h-full w-full object-contain"
+                priority
+              />
             </div>
             <div>
               <div className="text-sm font-bold tracking-tight text-white">HackIGNISIA</div>

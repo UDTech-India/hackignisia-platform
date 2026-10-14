@@ -1,6 +1,7 @@
 "use client";
 
 import Link from "next/link";
+import Image from "next/image";
 import Notifications from "@/components/Notifications";
 import {
   Bell,
@@ -277,8 +278,15 @@ export default function DashboardPage() {
               onClick={() => setSidebarOpen(false)}
               className="flex items-center gap-3"
             >
-              <div className="flex h-10 w-10 items-center justify-center rounded-xl bg-violet-400 text-sm font-black text-black shadow-lg shadow-violet-500/20">
-                H
+              <div className="relative flex h-10 w-10 items-center justify-center overflow-hidden rounded-xl bg-white p-0.5 shadow-lg shadow-white/5">
+                <Image
+                  src="/logo.png"
+                  alt="HackIGNISIA Logo"
+                  width={40}
+                  height={40}
+                  className="h-full w-full object-contain"
+                  priority
+                />
               </div>
 
               <div>
