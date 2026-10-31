@@ -29,9 +29,8 @@ FOR SELECT TO authenticated
 USING (public.is_admin());
 
 -- No INSERT, UPDATE, or DELETE policies exist for any role.
--- Explicitly revoke write privileges from anon and authenticated.
-REVOKE ALL ON public.admin_audit_log FROM PUBLIC, anon;
-REVOKE INSERT, UPDATE, DELETE ON public.admin_audit_log FROM authenticated;
+-- Explicitly revoke all privileges from PUBLIC, anon, authenticated, then grant SELECT only to authenticated.
+REVOKE ALL ON public.admin_audit_log FROM PUBLIC, anon, authenticated;
 GRANT SELECT ON public.admin_audit_log TO authenticated;
 
 
@@ -42,35 +41,43 @@ GRANT SELECT ON public.admin_audit_log TO authenticated;
 -- Ensure RLS is active on public.events
 ALTER TABLE public.events ENABLE ROW LEVEL SECURITY;
 
--- Everyone (including anon) must be able to read active events for landing page,
--- countdown timer, timeline, and dashboard.
-DROP POLICY IF EXISTS "events_select_all" ON public.events;
+-- Drop every existing policy on public.events regardless of prior naming
+DO $$
+DECLARE
+  r record;
+BEGIN
+  FOR r IN SELECT policyname FROM pg_policies
+           WHERE schemaname = 'public' AND tablename = 'events' LOOP
+    EXECUTE format('DROP POLICY %I ON public.events', r.policyname);
+  END LOOP;
+END $$;
+
+-- 1. Everyone (including anon) must be able to read active events for landing page,
+--    countdown timer, timeline, and dashboard.
 CREATE POLICY "events_select_all" ON public.events
 FOR SELECT TO anon, authenticated
 USING (true);
 
--- Ensure client UPDATE is restricted strictly to administrators
-DROP POLICY IF EXISTS "events_admin_update" ON public.events;
+-- 2. Ensure client INSERT is restricted strictly to administrators
+CREATE POLICY "events_admin_insert" ON public.events
+FOR INSERT TO authenticated
+WITH CHECK (public.is_admin());
+
+-- 3. Ensure client UPDATE is restricted strictly to administrators
 CREATE POLICY "events_admin_update" ON public.events
 FOR UPDATE TO authenticated
 USING (public.is_admin())
 WITH CHECK (public.is_admin());
 
--- Maintain admin-only INSERT and DELETE policies
-DROP POLICY IF EXISTS "events_admin_insert" ON public.events;
-CREATE POLICY "events_admin_insert" ON public.events
-FOR INSERT TO authenticated
-WITH CHECK (public.is_admin());
-
-DROP POLICY IF EXISTS "events_admin_delete" ON public.events;
+-- 4. Ensure client DELETE is restricted strictly to administrators
 CREATE POLICY "events_admin_delete" ON public.events
 FOR DELETE TO authenticated
 USING (public.is_admin());
 
 -- Table privileges: anon only needs SELECT; authenticated modifies via admin policies / RPC
-REVOKE INSERT, UPDATE, DELETE ON public.events FROM anon;
-GRANT SELECT ON public.events TO anon, authenticated;
-GRANT INSERT, UPDATE, DELETE ON public.events TO authenticated;
+REVOKE ALL ON public.events FROM anon;
+GRANT SELECT ON public.events TO anon;
+GRANT SELECT, INSERT, UPDATE, DELETE ON public.events TO authenticated;
 
 
 -- ============================================================================
@@ -128,42 +135,47 @@ BEGIN
     RAISE EXCEPTION 'Judging end date is required';
   END IF;
 
-  -- 3. Validate chronological ordering with exact field-specific error messages:
-  -- opens < deadline <= judging_starts < judging_ends, and results_at >= judging_ends when set
+  -- 3. Validate chronological ordering with exact field-specific error messages
+  --    showing formatted timestamps in IST (Asia/Kolkata):
+  --    opens < deadline <= judging_starts < judging_ends, and results_at >= judging_ends when set
 
   -- (a) submission_opens_at < submission_deadline_at
   IF p_submission_deadline_at <= p_submission_opens_at THEN
     RAISE EXCEPTION 'Submission deadline (%) must be after submission opens (%). Change submission deadline or submission opens.',
-      p_submission_deadline_at, p_submission_opens_at;
+      to_char(p_submission_deadline_at AT TIME ZONE 'Asia/Kolkata', 'DD Mon YYYY, HH12:MI AM') || ' IST',
+      to_char(p_submission_opens_at AT TIME ZONE 'Asia/Kolkata', 'DD Mon YYYY, HH12:MI AM') || ' IST';
   END IF;
 
   -- (b) submission_deadline_at <= judging_starts_at
   IF p_judging_starts_at < p_submission_deadline_at THEN
     RAISE EXCEPTION 'Judging start (%) cannot be before submission deadline (%). Change judging start or submission deadline.',
-      p_judging_starts_at, p_submission_deadline_at;
+      to_char(p_judging_starts_at AT TIME ZONE 'Asia/Kolkata', 'DD Mon YYYY, HH12:MI AM') || ' IST',
+      to_char(p_submission_deadline_at AT TIME ZONE 'Asia/Kolkata', 'DD Mon YYYY, HH12:MI AM') || ' IST';
   END IF;
 
   -- (c) judging_starts_at < judging_ends_at
   IF p_judging_ends_at <= p_judging_starts_at THEN
     RAISE EXCEPTION 'Judging end (%) must be after judging start (%). Change judging end or judging start.',
-      p_judging_ends_at, p_judging_starts_at;
+      to_char(p_judging_ends_at AT TIME ZONE 'Asia/Kolkata', 'DD Mon YYYY, HH12:MI AM') || ' IST',
+      to_char(p_judging_starts_at AT TIME ZONE 'Asia/Kolkata', 'DD Mon YYYY, HH12:MI AM') || ' IST';
   END IF;
 
   -- (d) results_at >= judging_ends_at (when results_at is provided)
   IF p_results_at IS NOT NULL AND p_results_at < p_judging_ends_at THEN
     RAISE EXCEPTION 'Results announcement (%) cannot be before judging end (%). Change results date or judging end.',
-      p_results_at, p_judging_ends_at;
+      to_char(p_results_at AT TIME ZONE 'Asia/Kolkata', 'DD Mon YYYY, HH12:MI AM') || ' IST',
+      to_char(p_judging_ends_at AT TIME ZONE 'Asia/Kolkata', 'DD Mon YYYY, HH12:MI AM') || ' IST';
   END IF;
 
-  -- 4. Update the event record (leave registration_opens_at / registration_closes_at untouched)
+  -- 4. Update the event record (leave registration_opens_at / registration_closes_at untouched,
+  --    and do not assign updated_at since public.events has no such column)
   UPDATE public.events
   SET
     submission_opens_at = p_submission_opens_at,
     submission_deadline_at = p_submission_deadline_at,
     judging_starts_at = p_judging_starts_at,
     judging_ends_at = p_judging_ends_at,
-    results_at = p_results_at,
-    updated_at = now()
+    results_at = p_results_at
   WHERE id = p_event_id;
 
   -- 5. Record the administrative change in public.admin_audit_log

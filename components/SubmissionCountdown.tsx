@@ -194,3 +194,4 @@ export default function SubmissionCountdown({ event }: { event: EventDates }) {
     </div>
   );
 }
+
