@@ -81,6 +81,25 @@ DECLARE
   v_team_jp_id uuid := gen_random_uuid();
   v_sub_jp_id uuid := gen_random_uuid();
   v_eval_jp_id uuid := gen_random_uuid();
+
+  -- Additional test fixtures for submission/judging window and assignment checks
+  v_event_null_opens_id uuid := gen_random_uuid();
+  v_team_null_opens_id uuid := gen_random_uuid();
+  v_sub_null_opens_id uuid := gen_random_uuid();
+
+  v_event_null_dl_id uuid := gen_random_uuid();
+  v_team_null_dl_id uuid := gen_random_uuid();
+  v_sub_null_dl_id uuid := gen_random_uuid();
+
+  v_event_null_judge_id uuid := gen_random_uuid();
+  v_team_null_judge_id uuid := gen_random_uuid();
+  v_sub_null_judge_id uuid := gen_random_uuid();
+  v_eval_null_judge_id uuid := gen_random_uuid();
+
+  v_judge_del_id uuid := gen_random_uuid();
+  v_team_del_ja_id uuid := gen_random_uuid();
+  v_sub_del_ja_id uuid := gen_random_uuid();
+  v_eval_del_ja_id uuid := gen_random_uuid();
 BEGIN
   -- 1. Populate temp_test_fixtures
   INSERT INTO temp_test_fixtures (key, val) VALUES
@@ -108,7 +127,12 @@ BEGIN
     ('eval_jf_id', v_eval_jf_id),
     ('event_judge_past_id', v_event_judge_past_id),
     ('sub_jp_id', v_sub_jp_id),
-    ('eval_jp_id', v_eval_jp_id);
+    ('eval_jp_id', v_eval_jp_id),
+    ('sub_null_opens_id', v_sub_null_opens_id),
+    ('sub_null_dl_id', v_sub_null_dl_id),
+    ('eval_null_judge_id', v_eval_null_judge_id),
+    ('judge_del_id', v_judge_del_id),
+    ('eval_del_ja_id', v_eval_del_ja_id);
 
   -- 2. Create users in auth.users (trigger handle_new_user auto-inserts into public.profiles)
   INSERT INTO auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
@@ -118,11 +142,12 @@ BEGIN
     (v_judge_ai_id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'judge_ai@fixture.test', 'secret', now(), '{"provider":"email","providers":["email"]}', '{"full_name":"Fixture Judge AI"}', now(), now()),
     (v_judge_ai_2_id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'judge_ai_2@fixture.test', 'secret', now(), '{"provider":"email","providers":["email"]}', '{"full_name":"Fixture Judge AI 2"}', now(), now()),
     (v_judge_web_id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'judge_web@fixture.test', 'secret', now(), '{"provider":"email","providers":["email"]}', '{"full_name":"Fixture Judge Web"}', now(), now()),
-    (v_admin_id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'admin@fixture.test', 'secret', now(), '{"provider":"email","providers":["email"]}', '{"full_name":"Fixture Admin"}', now(), now());
+    (v_admin_id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'admin@fixture.test', 'secret', now(), '{"provider":"email","providers":["email"]}', '{"full_name":"Fixture Admin"}', now(), now()),
+    (v_judge_del_id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'judge_del@fixture.test', 'secret', now(), '{"provider":"email","providers":["email"]}', '{"full_name":"Fixture Judge Deleted"}', now(), now());
 
   -- Update profile roles while tr_protect_profile_columns is disabled
   UPDATE public.profiles SET platform_role = 'participant' WHERE id IN (v_leader_id, v_member_id);
-  UPDATE public.profiles SET platform_role = 'judge' WHERE id IN (v_judge_ai_id, v_judge_ai_2_id, v_judge_web_id);
+  UPDATE public.profiles SET platform_role = 'judge' WHERE id IN (v_judge_ai_id, v_judge_ai_2_id, v_judge_web_id, v_judge_del_id);
   UPDATE public.profiles SET platform_role = 'admin' WHERE id = v_admin_id;
 
   -- 3. Ensure official tracks exist
@@ -131,16 +156,18 @@ BEGIN
     ('Web & App Development', 'Web Track')
   ON CONFLICT (name) DO NOTHING;
 
-  -- 4. Create primary event (includes required slug NOT NULL column)
+  -- 4. Create primary event (includes required slug NOT NULL column and explicit window dates)
   INSERT INTO public.events (
     id, slug, name, description, is_active,
     registration_opens_at, registration_closes_at,
-    submission_deadline_at, judging_starts_at, judging_ends_at
+    submission_opens_at, submission_deadline_at,
+    judging_starts_at, judging_ends_at
   ) VALUES (
     v_event_id, 'fixture-main-' || v_event_id::text,
     'Hardening Main Event', 'Main event for security tests', true,
     now() - interval '2 days', now() + interval '2 days',
-    now() + interval '2 days', now() - interval '1 day', now() + interval '2 days'
+    now() - interval '2 days', now() + interval '2 days',
+    now() - interval '1 day', now() + interval '2 days'
   );
 
   INSERT INTO public.event_rubrics (event_id, criteria) VALUES (
@@ -221,9 +248,9 @@ BEGIN
   INSERT INTO public.submission_files (submission_id, file_path, file_type, uploaded_by)
   VALUES (v_sub_no_track_id, 'fixture/file3.pdf', 'application/pdf', v_leader_id);
 
-  -- 9. Timing event: window opens in future
-  INSERT INTO public.events (id, slug, name, registration_opens_at, submission_deadline_at)
-  VALUES (v_event_future_id, 'fixture-fut-' || v_event_future_id::text, 'Future Event', now() + interval '1 day', now() + interval '3 days');
+  -- 9. Timing event: submission window opens in future
+  INSERT INTO public.events (id, slug, name, submission_opens_at, submission_deadline_at, judging_starts_at, judging_ends_at)
+  VALUES (v_event_future_id, 'fixture-fut-' || v_event_future_id::text, 'Future Event', now() + interval '1 day', now() + interval '3 days', now() + interval '4 days', now() + interval '5 days');
   INSERT INTO public.teams (id, event_id, name, team_code, created_by)
   VALUES (v_team_future_id, v_event_future_id, 'Future Team', 'TC' || substring(replace(v_team_future_id::text, '-', ''), 1, 10), v_leader_id);
   INSERT INTO public.submissions (id, team_id, title, problem_statement, solution, track, status)
@@ -232,8 +259,8 @@ BEGIN
   VALUES (v_sub_future_id, 'fixture/file4.pdf', 'application/pdf', v_leader_id);
 
   -- 10. Timing event: submission deadline in past
-  INSERT INTO public.events (id, slug, name, registration_opens_at, submission_deadline_at)
-  VALUES (v_event_past_id, 'fixture-past-' || v_event_past_id::text, 'Past Event', now() - interval '3 days', now() - interval '1 hour');
+  INSERT INTO public.events (id, slug, name, submission_opens_at, submission_deadline_at, judging_starts_at, judging_ends_at)
+  VALUES (v_event_past_id, 'fixture-past-' || v_event_past_id::text, 'Past Event', now() - interval '3 days', now() - interval '1 hour', now() + interval '1 day', now() + interval '2 days');
   INSERT INTO public.teams (id, event_id, name, team_code, created_by)
   VALUES (v_team_past_id, v_event_past_id, 'Past Team', 'TC' || substring(replace(v_team_past_id::text, '-', ''), 1, 10), v_leader_id);
   INSERT INTO public.submissions (id, team_id, title, problem_statement, solution, track, status)
@@ -241,9 +268,29 @@ BEGIN
   INSERT INTO public.submission_files (submission_id, file_path, file_type, uploaded_by)
   VALUES (v_sub_past_id, 'fixture/file5.pdf', 'application/pdf', v_leader_id);
 
-  -- 11. Judging timing: judging_starts_at in future (submissions pre-submitted via RPC bypass flag)
-  INSERT INTO public.events (id, slug, name, judging_starts_at, judging_ends_at)
-  VALUES (v_event_judge_future_id, 'fixture-jf-' || v_event_judge_future_id::text, 'JF Event', now() + interval '1 day', now() + interval '3 days');
+  -- 11. Edge case event: submission_opens_at IS NULL
+  INSERT INTO public.events (id, slug, name, submission_opens_at, submission_deadline_at, judging_starts_at, judging_ends_at)
+  VALUES (v_event_null_opens_id, 'fixture-null-opens-' || v_event_null_opens_id::text, 'Null Opens Event', NULL, now() + interval '3 days', now() + interval '4 days', now() + interval '5 days');
+  INSERT INTO public.teams (id, event_id, name, team_code, created_by)
+  VALUES (v_team_null_opens_id, v_event_null_opens_id, 'Null Opens Team', 'TC' || substring(replace(v_team_null_opens_id::text, '-', ''), 1, 10), v_leader_id);
+  INSERT INTO public.submissions (id, team_id, title, problem_statement, solution, track, status)
+  VALUES (v_sub_null_opens_id, v_team_null_opens_id, 'Null Opens Project', 'Prob', 'Sol', 'AI & Machine Learning', 'draft');
+  INSERT INTO public.submission_files (submission_id, file_path, file_type, uploaded_by)
+  VALUES (v_sub_null_opens_id, 'fixture/file_null_opens.pdf', 'application/pdf', v_leader_id);
+
+  -- 12. Edge case event: submission_deadline_at IS NULL
+  INSERT INTO public.events (id, slug, name, submission_opens_at, submission_deadline_at, judging_starts_at, judging_ends_at)
+  VALUES (v_event_null_dl_id, 'fixture-null-dl-' || v_event_null_dl_id::text, 'Null DL Event', now() - interval '2 days', NULL, now() + interval '4 days', now() + interval '5 days');
+  INSERT INTO public.teams (id, event_id, name, team_code, created_by)
+  VALUES (v_team_null_dl_id, v_event_null_dl_id, 'Null DL Team', 'TC' || substring(replace(v_team_null_dl_id::text, '-', ''), 1, 10), v_leader_id);
+  INSERT INTO public.submissions (id, team_id, title, problem_statement, solution, track, status)
+  VALUES (v_sub_null_dl_id, v_team_null_dl_id, 'Null DL Project', 'Prob', 'Sol', 'AI & Machine Learning', 'draft');
+  INSERT INTO public.submission_files (submission_id, file_path, file_type, uploaded_by)
+  VALUES (v_sub_null_dl_id, 'fixture/file_null_dl.pdf', 'application/pdf', v_leader_id);
+
+  -- 13. Judging timing: judging_starts_at in future (submissions pre-submitted via RPC bypass flag)
+  INSERT INTO public.events (id, slug, name, submission_opens_at, submission_deadline_at, judging_starts_at, judging_ends_at)
+  VALUES (v_event_judge_future_id, 'fixture-jf-' || v_event_judge_future_id::text, 'JF Event', now() - interval '4 days', now() - interval '1 day', now() + interval '1 day', now() + interval '3 days');
   INSERT INTO public.event_rubrics (event_id, criteria) VALUES (v_event_judge_future_id, '{"innovation":{"max":25}}'::jsonb);
   INSERT INTO public.teams (id, event_id, name, team_code, created_by)
   VALUES (v_team_jf_id, v_event_judge_future_id, 'JF Team', 'TC' || substring(replace(v_team_jf_id::text, '-', ''), 1, 10), v_leader_id);
@@ -258,9 +305,9 @@ BEGIN
   INSERT INTO public.evaluations (id, submission_id, judge_id, status, scores)
   VALUES (v_eval_jf_id, v_sub_jf_id, v_judge_ai_id, 'draft', '{"innovation": 20}'::jsonb);
 
-  -- 12. Judging timing: judging_ends_at in past (submissions pre-submitted via RPC bypass flag)
-  INSERT INTO public.events (id, slug, name, judging_starts_at, judging_ends_at)
-  VALUES (v_event_judge_past_id, 'fixture-jp-' || v_event_judge_past_id::text, 'JP Event', now() - interval '3 days', now() - interval '1 hour');
+  -- 14. Judging timing: judging_ends_at in past (submissions pre-submitted via RPC bypass flag)
+  INSERT INTO public.events (id, slug, name, submission_opens_at, submission_deadline_at, judging_starts_at, judging_ends_at)
+  VALUES (v_event_judge_past_id, 'fixture-jp-' || v_event_judge_past_id::text, 'JP Event', now() - interval '5 days', now() - interval '4 days', now() - interval '3 days', now() - interval '1 hour');
   INSERT INTO public.event_rubrics (event_id, criteria) VALUES (v_event_judge_past_id, '{"innovation":{"max":25}}'::jsonb);
   INSERT INTO public.teams (id, event_id, name, team_code, created_by)
   VALUES (v_team_jp_id, v_event_judge_past_id, 'JP Team', 'TC' || substring(replace(v_team_jp_id::text, '-', ''), 1, 10), v_leader_id);
@@ -272,6 +319,37 @@ BEGIN
 
   INSERT INTO public.evaluations (id, submission_id, judge_id, status, scores)
   VALUES (v_eval_jp_id, v_sub_jp_id, v_judge_ai_id, 'draft', '{"innovation": 20}'::jsonb);
+
+  -- 15. Judging timing: judging dates NULL
+  INSERT INTO public.events (id, slug, name, submission_opens_at, submission_deadline_at, judging_starts_at, judging_ends_at)
+  VALUES (v_event_null_judge_id, 'fixture-null-jd-' || v_event_null_judge_id::text, 'Null JD Event', now() - interval '4 days', now() - interval '2 days', NULL, NULL);
+  INSERT INTO public.event_rubrics (event_id, criteria) VALUES (v_event_null_judge_id, '{"innovation":{"max":25}}'::jsonb);
+  INSERT INTO public.teams (id, event_id, name, team_code, created_by)
+  VALUES (v_team_null_judge_id, v_event_null_judge_id, 'Null JD Team', 'TC' || substring(replace(v_team_null_judge_id::text, '-', ''), 1, 10), v_leader_id);
+
+  INSERT INTO public.submissions (id, team_id, title, problem_statement, solution, track, status, submitted_at)
+  VALUES (v_sub_null_judge_id, v_team_null_judge_id, 'Null JD Project', 'Prob', 'Sol', 'AI & Machine Learning', 'submitted', now());
+  INSERT INTO public.submission_files (submission_id, file_path, file_type, uploaded_by)
+  VALUES (v_sub_null_judge_id, 'fixture/file_null_jd.pdf', 'application/pdf', v_leader_id);
+
+  INSERT INTO public.evaluations (id, submission_id, judge_id, status, scores)
+  VALUES (v_eval_null_judge_id, v_sub_null_judge_id, v_judge_ai_id, 'draft', '{"innovation": 20}'::jsonb);
+
+  -- 16. Judge assignment deleted scenario (submission submitted on main event)
+  INSERT INTO public.teams (id, event_id, name, team_code, created_by)
+  VALUES (v_team_del_ja_id, v_event_id, 'Del JA Team', 'TC' || substring(replace(v_team_del_ja_id::text, '-', ''), 1, 10), v_leader_id);
+
+  INSERT INTO public.submissions (id, team_id, title, problem_statement, solution, track, status, submitted_at)
+  VALUES (v_sub_del_ja_id, v_team_del_ja_id, 'Del JA Project', 'Prob', 'Sol', 'AI & Machine Learning', 'submitted', now());
+  INSERT INTO public.submission_files (submission_id, file_path, file_type, uploaded_by)
+  VALUES (v_sub_del_ja_id, 'fixture/file_del_ja.pdf', 'application/pdf', v_leader_id);
+
+  INSERT INTO public.evaluations (id, submission_id, judge_id, status, scores)
+  VALUES (v_eval_del_ja_id, v_sub_del_ja_id, v_judge_del_id, 'draft', '{"innovation": 20, "technical": 20, "impact": 20, "design": 20}'::jsonb);
+
+  -- Explicitly simulate creation and deletion of assignment
+  INSERT INTO public.judge_assignments (judge_id, track) VALUES (v_judge_del_id, 'AI & Machine Learning');
+  DELETE FROM public.judge_assignments WHERE judge_id = v_judge_del_id;
 
   PERFORM set_config('app.submitting_via_rpc', 'false', true);
 
@@ -714,6 +792,8 @@ DECLARE
   v_sub_no_track_id uuid;
   v_sub_future_id uuid;
   v_sub_past_id uuid;
+  v_sub_null_opens_id uuid;
+  v_sub_null_dl_id uuid;
   v_err text;
   v_passed boolean := false;
 BEGIN
@@ -723,6 +803,8 @@ BEGIN
   SELECT val INTO v_sub_no_track_id FROM temp_test_fixtures WHERE key = 'sub_no_track_id';
   SELECT val INTO v_sub_future_id FROM temp_test_fixtures WHERE key = 'sub_future_id';
   SELECT val INTO v_sub_past_id FROM temp_test_fixtures WHERE key = 'sub_past_id';
+  SELECT val INTO v_sub_null_opens_id FROM temp_test_fixtures WHERE key = 'sub_null_opens_id';
+  SELECT val INTO v_sub_null_dl_id FROM temp_test_fixtures WHERE key = 'sub_null_dl_id';
 
   v_claims := '{"sub": "' || v_leader_id || '", "role": "authenticated"}';
   EXECUTE 'SET LOCAL ROLE authenticated';
@@ -810,6 +892,40 @@ BEGIN
   END;
   IF v_passed THEN
     INSERT INTO test_results (test_name, status, details) VALUES ('11e. submit after deadline rejected', 'FAIL', 'Succeeded unexpectedly');
+  END IF;
+
+  -- 11f. Submission window opens is NULL
+  v_passed := false;
+  BEGIN
+    PERFORM public.submit_project(v_sub_null_opens_id);
+    v_passed := true;
+  EXCEPTION WHEN OTHERS THEN
+    v_err := SQLERRM;
+    IF v_err LIKE '%Submission window is not configured%' THEN
+      INSERT INTO test_results (test_name, status, details) VALUES ('11f. submit NULL submission_opens_at rejected', 'PASS', v_err);
+    ELSE
+      INSERT INTO test_results (test_name, status, details) VALUES ('11f. submit NULL submission_opens_at rejected', 'FAIL', 'Unexpected: ' || v_err);
+    END IF;
+  END;
+  IF v_passed THEN
+    INSERT INTO test_results (test_name, status, details) VALUES ('11f. submit NULL submission_opens_at rejected', 'FAIL', 'Succeeded unexpectedly');
+  END IF;
+
+  -- 11g. Submission deadline is NULL
+  v_passed := false;
+  BEGIN
+    PERFORM public.submit_project(v_sub_null_dl_id);
+    v_passed := true;
+  EXCEPTION WHEN OTHERS THEN
+    v_err := SQLERRM;
+    IF v_err LIKE '%Submission window is not configured%' THEN
+      INSERT INTO test_results (test_name, status, details) VALUES ('11g. submit NULL submission_deadline_at rejected', 'PASS', v_err);
+    ELSE
+      INSERT INTO test_results (test_name, status, details) VALUES ('11g. submit NULL submission_deadline_at rejected', 'FAIL', 'Unexpected: ' || v_err);
+    END IF;
+  END;
+  IF v_passed THEN
+    INSERT INTO test_results (test_name, status, details) VALUES ('11g. submit NULL submission_deadline_at rejected', 'FAIL', 'Succeeded unexpectedly');
   END IF;
 END $$;
 
@@ -1064,22 +1180,31 @@ END $$;
 
 
 -- ============================================================================
--- TEST 16: finalize_evaluation JUDGING TIMING WINDOW CHECKS
+-- TEST 16: finalize_evaluation JUDGING TIMING WINDOW & TRACK ASSIGNMENT CHECKS
 -- ============================================================================
 RESET ROLE;
 DO $$
 DECLARE
   v_eval_jf_id uuid;
   v_eval_jp_id uuid;
+  v_eval_null_judge_id uuid;
+  v_eval_del_ja_id uuid;
   v_judge_ai_id uuid;
+  v_judge_del_id uuid;
   v_claims text;
+  v_claims_del text;
   v_err text;
   v_passed boolean := false;
 BEGIN
   SELECT val INTO v_eval_jf_id FROM temp_test_fixtures WHERE key = 'eval_jf_id';
   SELECT val INTO v_eval_jp_id FROM temp_test_fixtures WHERE key = 'eval_jp_id';
+  SELECT val INTO v_eval_null_judge_id FROM temp_test_fixtures WHERE key = 'eval_null_judge_id';
+  SELECT val INTO v_eval_del_ja_id FROM temp_test_fixtures WHERE key = 'eval_del_ja_id';
   SELECT val INTO v_judge_ai_id FROM temp_test_fixtures WHERE key = 'judge_ai_id';
+  SELECT val INTO v_judge_del_id FROM temp_test_fixtures WHERE key = 'judge_del_id';
+
   v_claims := '{"sub": "' || v_judge_ai_id || '", "role": "authenticated"}';
+  v_claims_del := '{"sub": "' || v_judge_del_id || '", "role": "authenticated"}';
 
   EXECUTE 'SET LOCAL ROLE authenticated';
   EXECUTE 'SET LOCAL "request.jwt.claims" TO ''' || v_claims || '''';
@@ -1115,6 +1240,44 @@ BEGIN
   END;
   IF v_passed THEN
     INSERT INTO test_results (test_name, status, details) VALUES ('16b. finalize after judging_ends_at rejected', 'FAIL', 'Succeeded unexpectedly');
+  END IF;
+
+  -- 16c. Judging window dates NULL
+  v_passed := false;
+  BEGIN
+    PERFORM public.finalize_evaluation(v_eval_null_judge_id);
+    v_passed := true;
+  EXCEPTION WHEN OTHERS THEN
+    v_err := SQLERRM;
+    IF v_err LIKE '%Judging window is not configured%' THEN
+      INSERT INTO test_results (test_name, status, details) VALUES ('16c. finalize with judging dates NULL rejected', 'PASS', v_err);
+    ELSE
+      INSERT INTO test_results (test_name, status, details) VALUES ('16c. finalize with judging dates NULL rejected', 'FAIL', 'Unexpected: ' || v_err);
+    END IF;
+  END;
+  IF v_passed THEN
+    INSERT INTO test_results (test_name, status, details) VALUES ('16c. finalize with judging dates NULL rejected', 'FAIL', 'Succeeded unexpectedly');
+  END IF;
+
+  -- 16d. Judge whose assignment was deleted / unassigned track
+  RESET ROLE;
+  EXECUTE 'SET LOCAL ROLE authenticated';
+  EXECUTE 'SET LOCAL "request.jwt.claims" TO ''' || v_claims_del || '''';
+
+  v_passed := false;
+  BEGIN
+    PERFORM public.finalize_evaluation(v_eval_del_ja_id);
+    v_passed := true;
+  EXCEPTION WHEN OTHERS THEN
+    v_err := SQLERRM;
+    IF v_err LIKE '%You are not assigned to this track%' THEN
+      INSERT INTO test_results (test_name, status, details) VALUES ('16d. finalize by judge with deleted assignment rejected', 'PASS', v_err);
+    ELSE
+      INSERT INTO test_results (test_name, status, details) VALUES ('16d. finalize by judge with deleted assignment rejected', 'FAIL', 'Unexpected: ' || v_err);
+    END IF;
+  END;
+  IF v_passed THEN
+    INSERT INTO test_results (test_name, status, details) VALUES ('16d. finalize by judge with deleted assignment rejected', 'FAIL', 'Succeeded unexpectedly');
   END IF;
 END $$;
 

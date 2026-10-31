@@ -505,18 +505,18 @@ export default function ProjectPage() {
       setErrors((previous) => ({
         ...previous,
         presentation:
-          "Only PDF, PPT or PPTX files are allowed.",
+          "Invalid file type. Only PDF, PPT, and PPTX presentation files are allowed.",
       }));
 
       event.target.value = "";
       return;
     }
 
-    if (file.size > 10 * 1024 * 1024) {
+    if (file.size > 5 * 1024 * 1024) {
       setErrors((previous) => ({
         ...previous,
         presentation:
-          "Presentation must be smaller than 10 MB.",
+          "Presentation file exceeds the 5 MB limit. Please upload a file smaller than 5 MB.",
       }));
 
       event.target.value = "";
@@ -1836,7 +1836,7 @@ function StepFour({
             </label>
 
             <span className="text-[9px] text-zinc-700">
-              PDF / PPT / PPTX • Max 10 MB
+              PDF / PPT / PPTX • Max 5 MB
             </span>
           </div>
 
