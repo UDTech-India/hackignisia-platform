@@ -3,6 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import Notifications from "@/components/Notifications";
+import { formatISTDate } from "@/components/SubmissionCountdown";
 import {
   Bell,
   CalendarDays,
@@ -113,6 +114,7 @@ export default function DashboardPage() {
   const [teamData, setTeamData] = useState<any>(null);
   const [teamMembersList, setTeamMembersList] = useState<any[]>([]);
   const [submissionData, setSubmissionData] = useState<any>(null);
+  const [activeEvent, setActiveEvent] = useState<any>(null);
   const supabase = createClient();
   const router = useRouter();
 
@@ -136,6 +138,17 @@ export default function DashboardPage() {
       }
 
       setProfile(profileData);
+
+      const { data: eventRes } = await supabase
+        .from("events")
+        .select("id, submission_opens_at, submission_deadline_at, judging_starts_at, judging_ends_at, results_at")
+        .eq("is_active", true)
+        .limit(1)
+        .maybeSingle();
+
+      if (eventRes) {
+        setActiveEvent(eventRes);
+      }
 
       // Fetch user's team membership
       const { data: myMember } = await supabase
@@ -840,17 +853,43 @@ export default function DashboardPage() {
                   />
 
                   <div className="mt-7 space-y-5">
-                    {eventDates.map((item, index) => (
-                      <TimelineItem
-                        key={item.label}
-                        label={item.label}
-                        date={item.date}
-                        active={item.status === "active"}
-                        last={
-                          index === eventDates.length - 1
-                        }
-                      />
-                    ))}
+                    {(() => {
+                      const opens = activeEvent?.submission_opens_at ? formatISTDate(activeEvent.submission_opens_at) : null;
+                      const deadline = activeEvent?.submission_deadline_at ? formatISTDate(activeEvent.submission_deadline_at) : null;
+                      const judgeStart = activeEvent?.judging_starts_at ? formatISTDate(activeEvent.judging_starts_at) : null;
+                      const judgeEnd = activeEvent?.judging_ends_at ? formatISTDate(activeEvent.judging_ends_at) : null;
+                      const results = activeEvent?.results_at ? formatISTDate(activeEvent.results_at) : null;
+
+                      const now = Date.now();
+                      const opensMs = activeEvent?.submission_opens_at ? new Date(activeEvent.submission_opens_at).getTime() : 0;
+                      const deadlineMs = activeEvent?.submission_deadline_at ? new Date(activeEvent.submission_deadline_at).getTime() : 0;
+                      const isSubmissionActive = opensMs && deadlineMs && now >= opensMs && now <= deadlineMs;
+
+                      const dynamicDates = [
+                        { label: "Registration", date: "Open", status: "active" },
+                        { label: "Team Formation", date: "Active", status: "active" },
+                        {
+                          label: "Project Submission",
+                          date: opens && deadline ? `${opens} – ${deadline}` : "Coming Soon",
+                          status: isSubmissionActive ? "active" : "upcoming",
+                        },
+                        {
+                          label: "Judging & Results",
+                          date: judgeStart && judgeEnd ? `${judgeStart} – ${judgeEnd}` : results ? `Results: ${results}` : "Upcoming",
+                          status: "upcoming",
+                        },
+                      ];
+
+                      return dynamicDates.map((item, index) => (
+                        <TimelineItem
+                          key={item.label}
+                          label={item.label}
+                          date={item.date}
+                          active={item.status === "active"}
+                          last={index === dynamicDates.length - 1}
+                        />
+                      ));
+                    })()}
                   </div>
                 </DashboardCard>
 

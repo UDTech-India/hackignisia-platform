@@ -7,6 +7,7 @@ import {
   Activity,
   BarChart3,
   Bell,
+  Calendar,
   ChevronDown,
   ChevronLeft,
   ChevronRight,
@@ -404,6 +405,12 @@ export default function AdminDashboardPage() {
             <div className="mb-3 mt-8 px-3 text-[9px] uppercase tracking-[0.2em] text-zinc-700">
               Event
             </div>
+
+            <AdminNav
+              icon={<Calendar size={17} />}
+              label="Event Settings"
+              href="/admin/settings"
+            />
 
             <AdminNav
               icon={<Bell size={17} />}

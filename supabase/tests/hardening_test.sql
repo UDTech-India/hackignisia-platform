@@ -1403,6 +1403,323 @@ END $$;
 
 
 -- ============================================================================
+-- TEST 19: ADMIN_UPDATE_EVENT_DATES PERMISSIONS & VALIDATION
+-- ============================================================================
+-- 19a. Anon calling admin_update_event_dates -> REJECTED
+RESET "request.jwt.claims";
+SET LOCAL ROLE anon;
+DO $$
+DECLARE
+  v_event_id uuid;
+  v_err text;
+  v_passed boolean := false;
+BEGIN
+  SELECT val INTO v_event_id FROM temp_test_fixtures WHERE key = 'event_id';
+  BEGIN
+    PERFORM public.admin_update_event_dates(
+      v_event_id,
+      now() + interval '1 day',
+      now() + interval '2 days',
+      now() + interval '3 days',
+      now() + interval '4 days'
+    );
+    v_passed := true;
+  EXCEPTION WHEN OTHERS THEN
+    v_err := SQLERRM;
+    IF v_err LIKE '%permission denied%' OR v_err LIKE '%Not authenticated%' THEN
+      INSERT INTO test_results (test_name, status, details) VALUES ('19a. anon call to admin_update_event_dates rejected', 'PASS', v_err);
+    ELSE
+      INSERT INTO test_results (test_name, status, details) VALUES ('19a. anon call to admin_update_event_dates rejected', 'FAIL', 'Unexpected: ' || v_err);
+    END IF;
+  END;
+  IF v_passed THEN
+    INSERT INTO test_results (test_name, status, details) VALUES ('19a. anon call to admin_update_event_dates rejected', 'FAIL', 'Succeeded unexpectedly');
+  END IF;
+END $$;
+
+-- 19b. Participant calling admin_update_event_dates -> REJECTED
+RESET ROLE;
+DO $$
+DECLARE
+  v_event_id uuid;
+  v_leader_id uuid;
+  v_claims text;
+  v_err text;
+  v_passed boolean := false;
+BEGIN
+  SELECT val INTO v_event_id FROM temp_test_fixtures WHERE key = 'event_id';
+  SELECT val INTO v_leader_id FROM temp_test_fixtures WHERE key = 'leader_id';
+  v_claims := '{"sub": "' || v_leader_id || '", "role": "authenticated"}';
+
+  EXECUTE 'SET LOCAL ROLE authenticated';
+  EXECUTE 'SET LOCAL "request.jwt.claims" TO ''' || v_claims || '''';
+
+  BEGIN
+    PERFORM public.admin_update_event_dates(
+      v_event_id,
+      now() + interval '1 day',
+      now() + interval '2 days',
+      now() + interval '3 days',
+      now() + interval '4 days'
+    );
+    v_passed := true;
+  EXCEPTION WHEN OTHERS THEN
+    v_err := SQLERRM;
+    IF v_err LIKE '%Admin only%' THEN
+      INSERT INTO test_results (test_name, status, details) VALUES ('19b. participant call to admin_update_event_dates rejected', 'PASS', v_err);
+    ELSE
+      INSERT INTO test_results (test_name, status, details) VALUES ('19b. participant call to admin_update_event_dates rejected', 'FAIL', 'Unexpected: ' || v_err);
+    END IF;
+  END;
+  IF v_passed THEN
+    INSERT INTO test_results (test_name, status, details) VALUES ('19b. participant call to admin_update_event_dates rejected', 'FAIL', 'Succeeded unexpectedly');
+  END IF;
+END $$;
+
+-- 19c-19f. Admin validation and successful update
+RESET ROLE;
+DO $$
+DECLARE
+  v_event_id uuid;
+  v_admin_id uuid;
+  v_claims text;
+  v_err text;
+  v_passed boolean := false;
+  v_count integer;
+  v_updated_deadline timestamptz;
+BEGIN
+  SELECT val INTO v_event_id FROM temp_test_fixtures WHERE key = 'event_id';
+  SELECT val INTO v_admin_id FROM temp_test_fixtures WHERE key = 'admin_id';
+  v_claims := '{"sub": "' || v_admin_id || '", "role": "authenticated"}';
+
+  EXECUTE 'SET LOCAL ROLE authenticated';
+  EXECUTE 'SET LOCAL "request.jwt.claims" TO ''' || v_claims || '''';
+
+  -- 19c. Admin call with deadline <= opens -> REJECTED
+  BEGIN
+    PERFORM public.admin_update_event_dates(
+      v_event_id,
+      now() + interval '5 days',
+      now() + interval '2 days',
+      now() + interval '6 days',
+      now() + interval '7 days'
+    );
+    v_passed := true;
+  EXCEPTION WHEN OTHERS THEN
+    v_err := SQLERRM;
+    IF v_err LIKE '%must be after submission opens%' THEN
+      INSERT INTO test_results (test_name, status, details) VALUES ('19c. admin update deadline <= opens rejected', 'PASS', v_err);
+    ELSE
+      INSERT INTO test_results (test_name, status, details) VALUES ('19c. admin update deadline <= opens rejected', 'FAIL', 'Unexpected: ' || v_err);
+    END IF;
+  END;
+  IF v_passed THEN
+    INSERT INTO test_results (test_name, status, details) VALUES ('19c. admin update deadline <= opens rejected', 'FAIL', 'Succeeded unexpectedly');
+  END IF;
+
+  -- 19d. Admin call with judging_starts < deadline -> REJECTED
+  v_passed := false;
+  BEGIN
+    PERFORM public.admin_update_event_dates(
+      v_event_id,
+      now() + interval '1 day',
+      now() + interval '4 days',
+      now() + interval '3 days',
+      now() + interval '5 days'
+    );
+    v_passed := true;
+  EXCEPTION WHEN OTHERS THEN
+    v_err := SQLERRM;
+    IF v_err LIKE '%cannot be before submission deadline%' THEN
+      INSERT INTO test_results (test_name, status, details) VALUES ('19d. admin update judging_starts < deadline rejected', 'PASS', v_err);
+    ELSE
+      INSERT INTO test_results (test_name, status, details) VALUES ('19d. admin update judging_starts < deadline rejected', 'FAIL', 'Unexpected: ' || v_err);
+    END IF;
+  END;
+  IF v_passed THEN
+    INSERT INTO test_results (test_name, status, details) VALUES ('19d. admin update judging_starts < deadline rejected', 'FAIL', 'Succeeded unexpectedly');
+  END IF;
+
+  -- 19e. Admin call with NULL required date -> REJECTED
+  v_passed := false;
+  BEGIN
+    PERFORM public.admin_update_event_dates(
+      v_event_id,
+      now() + interval '1 day',
+      NULL,
+      now() + interval '3 days',
+      now() + interval '4 days'
+    );
+    v_passed := true;
+  EXCEPTION WHEN OTHERS THEN
+    v_err := SQLERRM;
+    IF v_err LIKE '%Submission deadline is required%' THEN
+      INSERT INTO test_results (test_name, status, details) VALUES ('19e. admin update NULL required date rejected', 'PASS', v_err);
+    ELSE
+      INSERT INTO test_results (test_name, status, details) VALUES ('19e. admin update NULL required date rejected', 'FAIL', 'Unexpected: ' || v_err);
+    END IF;
+  END;
+  IF v_passed THEN
+    INSERT INTO test_results (test_name, status, details) VALUES ('19e. admin update NULL required date rejected', 'FAIL', 'Succeeded unexpectedly');
+  END IF;
+
+  -- 19f. Admin valid call -> Updates event and writes exactly one audit log row
+  PERFORM public.admin_update_event_dates(
+    v_event_id,
+    now() - interval '1 day',
+    now() + interval '10 days',
+    now() + interval '11 days',
+    now() + interval '12 days',
+    now() + interval '13 days'
+  );
+
+  SELECT submission_deadline_at INTO v_updated_deadline
+  FROM public.events WHERE id = v_event_id;
+
+  SELECT count(*) INTO v_count
+  FROM public.admin_audit_log
+  WHERE target_id = v_event_id::text AND action = 'event_dates_updated';
+
+  IF v_count = 1 AND v_updated_deadline > now() + interval '9 days' THEN
+    INSERT INTO test_results (test_name, status, details) VALUES ('19f. admin valid update updates events and writes audit log', 'PASS', '1 audit row written, deadline updated');
+  ELSE
+    INSERT INTO test_results (test_name, status, details) VALUES ('19f. admin valid update updates events and writes audit log', 'FAIL', 'Count: ' || v_count || ', deadline: ' || v_updated_deadline);
+  END IF;
+END $$;
+
+
+-- ============================================================================
+-- TEST 20: PARTICIPANT RLS ISOLATION ON ADMIN_AUDIT_LOG
+-- ============================================================================
+RESET ROLE;
+DO $$
+DECLARE
+  v_member_id uuid;
+  v_claims text;
+  v_count integer;
+  v_err text;
+  v_passed boolean := false;
+BEGIN
+  SELECT val INTO v_member_id FROM temp_test_fixtures WHERE key = 'member_id';
+  v_claims := '{"sub": "' || v_member_id || '", "role": "authenticated"}';
+
+  EXECUTE 'SET LOCAL ROLE authenticated';
+  EXECUTE 'SET LOCAL "request.jwt.claims" TO ''' || v_claims || '''';
+
+  -- 20a. Participant cannot SELECT admin_audit_log (RLS filters rows)
+  SELECT count(*) INTO v_count FROM public.admin_audit_log;
+  IF v_count = 0 THEN
+    INSERT INTO test_results (test_name, status, details) VALUES ('20a. participant cannot SELECT admin_audit_log', 'PASS', '0 rows returned via RLS');
+  ELSE
+    INSERT INTO test_results (test_name, status, details) VALUES ('20a. participant cannot SELECT admin_audit_log', 'FAIL', 'Participant saw audit rows: ' || v_count);
+  END IF;
+
+  -- 20b. Participant cannot direct INSERT into admin_audit_log
+  BEGIN
+    INSERT INTO public.admin_audit_log (action, target_type, target_id, details)
+    VALUES ('tamper', 'events', 'malicious', '{}'::jsonb);
+    v_passed := true;
+  EXCEPTION WHEN OTHERS THEN
+    v_err := SQLERRM;
+    IF v_err LIKE '%permission denied%' OR v_err LIKE '%violates row-level security policy%' THEN
+      INSERT INTO test_results (test_name, status, details) VALUES ('20b. participant cannot INSERT into admin_audit_log', 'PASS', v_err);
+    ELSE
+      INSERT INTO test_results (test_name, status, details) VALUES ('20b. participant cannot INSERT into admin_audit_log', 'FAIL', 'Unexpected: ' || v_err);
+    END IF;
+  END;
+  IF v_passed THEN
+    INSERT INTO test_results (test_name, status, details) VALUES ('20b. participant cannot INSERT into admin_audit_log', 'FAIL', 'Succeeded unexpectedly');
+  END IF;
+END $$;
+
+
+-- ============================================================================
+-- TEST 21: SUBMIT_PROJECT AFTER DEADLINE EXTENDED AND AFTER DEADLINE MOVED TO PAST
+-- ============================================================================
+RESET ROLE;
+DO $$
+DECLARE
+  v_admin_id uuid;
+  v_leader_id uuid;
+  v_event_past_id uuid;
+  v_sub_past_id uuid;
+  v_claims_admin text;
+  v_claims_leader text;
+  v_sub_row record;
+  v_err text;
+  v_passed boolean := false;
+BEGIN
+  SELECT val INTO v_admin_id FROM temp_test_fixtures WHERE key = 'admin_id';
+  SELECT val INTO v_leader_id FROM temp_test_fixtures WHERE key = 'leader_id';
+  SELECT val INTO v_event_past_id FROM temp_test_fixtures WHERE key = 'event_past_id';
+  SELECT val INTO v_sub_past_id FROM temp_test_fixtures WHERE key = 'sub_past_id';
+
+  v_claims_admin := '{"sub": "' || v_admin_id || '", "role": "authenticated"}';
+  v_claims_leader := '{"sub": "' || v_leader_id || '", "role": "authenticated"}';
+
+  -- 21a. Admin extends deadline of v_event_past_id from past into future
+  EXECUTE 'SET LOCAL ROLE authenticated';
+  EXECUTE 'SET LOCAL "request.jwt.claims" TO ''' || v_claims_admin || '''';
+
+  PERFORM public.admin_update_event_dates(
+    v_event_past_id,
+    now() - interval '2 days',
+    now() + interval '5 days',
+    now() + interval '6 days',
+    now() + interval '7 days'
+  );
+
+  -- Leader now submits v_sub_past_id (previously failed due to deadline)
+  EXECUTE 'SET LOCAL ROLE authenticated';
+  EXECUTE 'SET LOCAL "request.jwt.claims" TO ''' || v_claims_leader || '''';
+
+  PERFORM public.submit_project(v_sub_past_id);
+
+  RESET ROLE;
+  SELECT * INTO v_sub_row FROM public.submissions WHERE id = v_sub_past_id;
+  IF v_sub_row.status = 'submitted' THEN
+    INSERT INTO test_results (test_name, status, details) VALUES ('21a. submit_project accepts project after deadline extended', 'PASS', 'Status is submitted');
+  ELSE
+    INSERT INTO test_results (test_name, status, details) VALUES ('21a. submit_project accepts project after deadline extended', 'FAIL', 'Status was: ' || v_sub_row.status);
+  END IF;
+
+  -- 21b. Admin now moves deadline of v_event_null_dl_id into the past
+  EXECUTE 'SET LOCAL ROLE authenticated';
+  EXECUTE 'SET LOCAL "request.jwt.claims" TO ''' || v_claims_admin || '''';
+
+  SELECT val INTO v_sub_past_id FROM temp_test_fixtures WHERE key = 'sub_null_dl_id';
+  SELECT t.event_id INTO v_event_past_id FROM public.teams t JOIN public.submissions s ON s.team_id = t.id WHERE s.id = v_sub_past_id;
+
+  PERFORM public.admin_update_event_dates(
+    v_event_past_id,
+    now() - interval '5 days',
+    now() - interval '1 hour',
+    now() + interval '1 day',
+    now() + interval '2 days'
+  );
+
+  -- Leader tries to submit -> REJECTED ('Submission deadline has passed')
+  EXECUTE 'SET LOCAL ROLE authenticated';
+  EXECUTE 'SET LOCAL "request.jwt.claims" TO ''' || v_claims_leader || '''';
+
+  BEGIN
+    PERFORM public.submit_project(v_sub_past_id);
+    v_passed := true;
+  EXCEPTION WHEN OTHERS THEN
+    v_err := SQLERRM;
+    IF v_err LIKE '%Submission deadline has passed%' THEN
+      INSERT INTO test_results (test_name, status, details) VALUES ('21b. submit_project rejects project after deadline moved to past', 'PASS', v_err);
+    ELSE
+      INSERT INTO test_results (test_name, status, details) VALUES ('21b. submit_project rejects project after deadline moved to past', 'FAIL', 'Unexpected: ' || v_err);
+    END IF;
+  END;
+  IF v_passed THEN
+    INSERT INTO test_results (test_name, status, details) VALUES ('21b. submit_project rejects project after deadline moved to past', 'FAIL', 'Succeeded unexpectedly');
+  END IF;
+END $$;
+
+
+-- ============================================================================
 -- SUMMARY & TEARDOWN VIA FORCED EXCEPTION
 -- Rolls back all changes automatically while rendering results in Studio error panel.
 -- ============================================================================

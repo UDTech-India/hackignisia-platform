@@ -2,10 +2,30 @@
 
 import Link from "next/link";
 import Image from "next/image";
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { createClient } from "@/utils/supabase/client";
+import SubmissionCountdown, {
+  formatISTDate,
+  formatISTDateTime,
+  EventDates,
+} from "@/components/SubmissionCountdown";
 
 export default function Home() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
+  const [eventData, setEventData] = useState<EventDates>(null);
+
+  useEffect(() => {
+    const supabase = createClient();
+    supabase
+      .from("events")
+      .select("id, name, submission_opens_at, submission_deadline_at, judging_starts_at, judging_ends_at, results_at")
+      .eq("is_active", true)
+      .limit(1)
+      .maybeSingle()
+      .then(({ data }) => {
+        if (data) setEventData(data);
+      });
+  }, []);
 
   const closeMobileMenu = () => {
     setMobileMenuOpen(false);
@@ -256,7 +276,9 @@ export default function Home() {
             {/* Event information */}
             <div className="mt-6 flex flex-wrap gap-3">
               <div className="rounded-full border border-white/10 bg-white/[0.03] px-4 py-2 text-xs text-zinc-400">
-                12–13 September 2026
+                {eventData?.submission_opens_at && eventData?.submission_deadline_at
+                  ? `${formatISTDate(eventData.submission_opens_at)} – ${formatISTDate(eventData.submission_deadline_at)}`
+                  : "Dates Announced Soon"}
               </div>
 
               <div className="rounded-full border border-white/10 bg-white/[0.03] px-4 py-2 text-xs text-zinc-400">
@@ -267,6 +289,9 @@ export default function Home() {
                 Open to Builders Across India
               </div>
             </div>
+
+            {/* LIVE SUBMISSION COUNTDOWN */}
+            <SubmissionCountdown event={eventData} />
 
             {/* CTA */}
             <div className="mt-9 flex flex-col gap-3 sm:flex-row">
@@ -679,7 +704,9 @@ export default function Home() {
                     </div>
 
                     <div className="rounded-full bg-violet-400/10 px-3 py-1 text-xs font-medium text-violet-300">
-                      12–13 September 2026
+                      {eventData?.submission_opens_at && eventData?.submission_deadline_at
+                        ? `${formatISTDate(eventData.submission_opens_at)} – ${formatISTDate(eventData.submission_deadline_at)}`
+                        : "Coming Soon"}
                     </div>
                   </div>
 
@@ -710,7 +737,9 @@ export default function Home() {
                     </div>
 
                     <div className="text-sm text-zinc-500">
-                      Final Submission
+                      {eventData?.submission_deadline_at
+                        ? `Deadline: ${formatISTDateTime(eventData.submission_deadline_at)}`
+                        : "Final Submission"}
                     </div>
                   </div>
 
@@ -741,7 +770,9 @@ export default function Home() {
                     </div>
 
                     <div className="text-sm text-zinc-500">
-                      Post Submission
+                      {eventData?.judging_starts_at && eventData?.judging_ends_at
+                        ? `${formatISTDate(eventData.judging_starts_at)} – ${formatISTDate(eventData.judging_ends_at)}`
+                        : "Post Submission"}
                     </div>
                   </div>
 
@@ -1293,9 +1324,11 @@ export default function Home() {
 
                 <div className="border-t border-white/10 px-6 pb-6 pt-5">
                   <p className="text-sm leading-6 text-zinc-500">
-                    HackIGNISIA 2026 is scheduled for{" "}
+                    HackIGNISIA 2026 submissions run from{" "}
                     <span className="font-medium text-zinc-300">
-                      12–13 September 2026
+                      {eventData?.submission_opens_at && eventData?.submission_deadline_at
+                        ? `${formatISTDate(eventData.submission_opens_at)} to ${formatISTDate(eventData.submission_deadline_at)}`
+                        : "dates to be announced soon"}
                     </span>
                     .
                   </p>
@@ -1490,7 +1523,9 @@ export default function Home() {
               </span>
 
               <span>
-                12–13 September 2026
+                {eventData?.submission_opens_at && eventData?.submission_deadline_at
+                  ? `${formatISTDate(eventData.submission_opens_at)} – ${formatISTDate(eventData.submission_deadline_at)}`
+                  : "2026"}
               </span>
             </div>
           </div>
