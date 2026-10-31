@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
   try {
     // Uses the standard server client (anon / publishable key; no service role)
     const supabase = await createClient();
-    const { data, error } = await supabase
+    const { error } = await supabase
       .from("tracks")
       .select("id")
       .limit(1);
@@ -32,7 +32,7 @@ export async function GET(request: NextRequest) {
       );
     }
 
-    return NextResponse.json({ ok: true, data });
+    return NextResponse.json({ ok: true });
   } catch (err: unknown) {
     const message = err instanceof Error ? err.message : "Internal Server Error";
     console.error("[keepalive] Unexpected error:", err);
@@ -42,3 +42,4 @@ export async function GET(request: NextRequest) {
     );
   }
 }
+

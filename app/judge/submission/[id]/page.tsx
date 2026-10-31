@@ -132,8 +132,8 @@ export default function SubmissionEvaluation({ params }: { params?: { id: string
     return rawMsg;
   }
 
-  async function handleSaveDraft() {
-    if (isFinal) return;
+  async function handleSaveDraft(): Promise<string | null> {
+    if (isFinal) return evaluationId;
     setIsSaving(true);
     setSaved(false);
     setErrorMessage(null);
@@ -141,7 +141,9 @@ export default function SubmissionEvaluation({ params }: { params?: { id: string
     
     try {
       const { data: { user } } = await supabase.auth.getUser();
-      if (!user) return;
+      if (!user) {
+        throw new Error("You must be logged in to save evaluations.");
+      }
       
       // Omit keys left empty or invalid
       const cleanScores: Record<string, number> = {};
@@ -159,18 +161,27 @@ export default function SubmissionEvaluation({ params }: { params?: { id: string
         status: "draft"
       };
 
-      if (evaluationId) {
-        const { error: updErr } = await supabase.from("evaluations").update(payload).eq("id", evaluationId);
+      let currentId = evaluationId;
+
+      if (currentId) {
+        const { error: updErr } = await supabase.from("evaluations").update(payload).eq("id", currentId);
         if (updErr) throw updErr;
       } else {
         const { data, error: insErr } = await supabase.from("evaluations").insert([payload]).select("id").single();
         if (insErr) throw insErr;
-        if (data) setEvaluationId(data.id);
+        if (data?.id) {
+          currentId = data.id;
+          setEvaluationId(data.id);
+        }
       }
       setSaved(true);
+      setSuccessMessage("Draft evaluation saved successfully.");
+      setTimeout(() => setSuccessMessage(null), 4000);
+      return currentId;
     } catch (e: any) {
-      console.error(e);
-      setErrorMessage(e.message || "Failed to save draft.");
+      console.error("Save draft error:", e);
+      setErrorMessage(mapJudgeErrorMessage(e?.message || "Failed to save draft."));
+      return null;
     } finally {
       setIsSaving(false);
     }
@@ -185,20 +196,21 @@ export default function SubmissionEvaluation({ params }: { params?: { id: string
       return;
     }
 
-    if (!evaluationId) {
-      // Attempt auto-save first if draft not yet created
-      await handleSaveDraft();
-    }
-
     const confirmFinal = confirm(
-      "Are you sure you want to finalize this evaluation? You will not be able to change your scores afterwards."
+      "Are you sure you want to finalize this evaluation? You will not be able to edit scores after finalizing."
     );
     if (!confirmFinal) return;
     
     setIsSubmitting(true);
     try {
-      await handleSaveDraft(); // force save latest inputs
-      const { error } = await supabase.rpc("finalize_evaluation", { p_evaluation_id: evaluationId });
+      // Save draft first and get the valid evaluation ID
+      const targetEvalId = await handleSaveDraft();
+      if (!targetEvalId) {
+        // Save failed; handleSaveDraft already set error message
+        return;
+      }
+
+      const { error } = await supabase.rpc("finalize_evaluation", { p_evaluation_id: targetEvalId });
       if (error) {
         setErrorMessage(mapJudgeErrorMessage(error.message));
         return;
@@ -207,9 +219,12 @@ export default function SubmissionEvaluation({ params }: { params?: { id: string
       setIsFinal(true);
       setSuccessMessage("Evaluation finalized successfully! Scores have been recorded.");
       window.scrollTo({ top: 0, behavior: "smooth" });
+      setTimeout(() => {
+        router.push("/judge");
+      }, 1500);
     } catch (e: any) {
       setErrorMessage(mapJudgeErrorMessage(e?.message || "Failed to finalize evaluation."));
-      console.error(e);
+      console.error("Finalize evaluation error:", e);
     } finally {
       setIsSubmitting(false);
     }

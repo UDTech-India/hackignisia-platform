@@ -520,24 +520,24 @@ BEGIN
     INSERT INTO test_results (test_name, status, details) VALUES ('5b. string score rejected', 'FAIL', 'Succeeded unexpectedly');
   END IF;
 
-  -- 5c. Nested object score
+  -- 5c. String NaN score
   v_passed := false;
   BEGIN
     INSERT INTO public.evaluations (submission_id, judge_id, status, scores)
-    VALUES (v_sub_id, v_judge_ai_2_id, 'draft', '{"innovation": {"pts": 25}}'::jsonb);
+    VALUES (v_sub_id, v_judge_ai_2_id, 'draft', '{"innovation": "NaN"}'::jsonb);
     v_passed := true;
   EXCEPTION WHEN OTHERS THEN
     v_err := SQLERRM;
     -- Raised by compute_evaluation_score() in 20261001000000_hardening.sql:
     -- RAISE EXCEPTION 'Score value for criterion % must be a number', v_key;
     IF v_err LIKE '%must be a number%' THEN
-      INSERT INTO test_results (test_name, status, details) VALUES ('5c. object score rejected', 'PASS', v_err);
+      INSERT INTO test_results (test_name, status, details) VALUES ('5c. NaN score rejected', 'PASS', v_err);
     ELSE
-      INSERT INTO test_results (test_name, status, details) VALUES ('5c. object score rejected', 'FAIL', 'Unexpected: ' || v_err);
+      INSERT INTO test_results (test_name, status, details) VALUES ('5c. NaN score rejected', 'FAIL', 'Unexpected: ' || v_err);
     END IF;
   END;
   IF v_passed THEN
-    INSERT INTO test_results (test_name, status, details) VALUES ('5c. object score rejected', 'FAIL', 'Succeeded unexpectedly');
+    INSERT INTO test_results (test_name, status, details) VALUES ('5c. NaN score rejected', 'FAIL', 'Succeeded unexpectedly');
   END IF;
 
   -- 5d. Score exceeding max
