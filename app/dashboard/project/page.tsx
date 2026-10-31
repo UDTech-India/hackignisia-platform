@@ -2,6 +2,7 @@
 
 import Link from "next/link";
 import {
+  AlertTriangle,
   ArrowLeft,
   ArrowRight,
   Check,
@@ -141,6 +142,12 @@ export default function ProjectPage() {
 
   const [selectedTrack, setSelectedTrack] = useState<string>("AI & Machine Learning");
   const [availableTracks, setAvailableTracks] = useState<{ id: string; name: string }[]>([]);
+  const [eventData, setEventData] = useState<{
+    id: string;
+    submission_opens_at: string | null;
+    submission_deadline_at: string | null;
+  } | null>(null);
+  const [submitErrorMessage, setSubmitErrorMessage] = useState<string | null>(null);
 
   const supabase = useMemo(() => createClient(), []);
 
@@ -158,6 +165,18 @@ export default function ProjectPage() {
 
         if (tracksData && tracksData.length > 0) {
           setAvailableTracks(tracksData);
+        }
+
+        // Load active event submission window dates live
+        const { data: eventRes } = await supabase
+          .from("events")
+          .select("id, submission_opens_at, submission_deadline_at")
+          .eq("is_active", true)
+          .limit(1)
+          .maybeSingle();
+
+        if (eventRes) {
+          setEventData(eventRes);
         }
 
         const { data: member } = await supabase
@@ -590,6 +609,56 @@ export default function ProjectPage() {
      FINAL SUBMIT
   ======================================================= */
 
+  const opensMs = eventData?.submission_opens_at ? new Date(eventData.submission_opens_at).getTime() : null;
+  const deadlineMs = eventData?.submission_deadline_at ? new Date(eventData.submission_deadline_at).getTime() : null;
+  const isWindowConfigured = opensMs !== null && deadlineMs !== null;
+  const now = Date.now();
+  const isBeforeOpen = isWindowConfigured && now < (opensMs as number);
+  const isAfterDeadline = isWindowConfigured && now > (deadlineMs as number);
+  const isSubmissionWindowOpen = isWindowConfigured && !isBeforeOpen && !isAfterDeadline;
+
+  const windowOpensStr = eventData?.submission_opens_at
+    ? new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true }).format(new Date(eventData.submission_opens_at))
+    : "TBD";
+
+  const windowClosesStr = eventData?.submission_deadline_at
+    ? new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true }).format(new Date(eventData.submission_deadline_at))
+    : "TBD";
+
+  function mapSubmitErrorMessage(rawMsg: string): string {
+    if (rawMsg.includes("Submission deadline has passed")) {
+      return `The submission deadline has passed (${windowClosesStr} IST). Submissions are no longer accepted.`;
+    }
+    if (rawMsg.includes("Submission window has not opened yet")) {
+      return `The submission window has not opened yet. Submissions open on ${windowOpensStr} IST.`;
+    }
+    if (rawMsg.includes("Submission window is not configured")) {
+      return "The submission window is not configured for this event. Please contact the organizers.";
+    }
+    if (rawMsg.includes("Only the team leader can submit the project")) {
+      return "Only the designated team leader has permission to submit the project.";
+    }
+    if (rawMsg.includes("presentation file is required") || rawMsg.includes("At least one project presentation file")) {
+      return "At least one project presentation file (PDF or PPTX under 5 MB) is required before submitting.";
+    }
+    if (rawMsg.includes("Project title is required")) {
+      return "Project title is required. Please fill in the project title in Step 1.";
+    }
+    if (rawMsg.includes("Problem statement is required")) {
+      return "Problem statement is required. Please describe the problem in Step 2.";
+    }
+    if (rawMsg.includes("Solution description is required") || rawMsg.includes("solution is required")) {
+      return "Solution description is required. Please describe the solution in Step 2.";
+    }
+    if (rawMsg.includes("Project track is required")) {
+      return "Project track is required. Please select a track in Step 1.";
+    }
+    if (rawMsg.includes("already been submitted")) {
+      return "This project has already been submitted and cannot be resubmitted.";
+    }
+    return rawMsg;
+  }
+
   async function handleSubmit(
     event: FormEvent<HTMLFormElement>
   ) {
@@ -696,11 +765,14 @@ export default function ProjectPage() {
         const { error: rpcErr } = await supabase.rpc("submit_project", { p_submission_id: currentSubId });
         if (rpcErr) {
           console.error("submit_project RPC error:", rpcErr);
-          alert("Failed to submit project: " + rpcErr.message);
+          const friendly = mapSubmitErrorMessage(rpcErr.message);
+          setSubmitErrorMessage(friendly);
+          window.scrollTo({ top: 0, behavior: "smooth" });
           return;
         }
       } else {
-        alert("Submission ID was not generated. Please try again.");
+        setSubmitErrorMessage("Submission ID was not generated. Please try again.");
+        window.scrollTo({ top: 0, behavior: "smooth" });
         return;
       }
 
@@ -1109,6 +1181,56 @@ export default function ProjectPage() {
               FORM
           ================================================= */}
 
+          {/* SUBMISSION WINDOW STATUS BANNER */}
+          <div className="mt-6 flex flex-col gap-3 rounded-2xl border border-white/10 bg-white/[0.02] p-4 text-xs sm:flex-row sm:items-center sm:justify-between">
+            <div className="flex items-center gap-2.5">
+              <span className="relative flex h-2.5 w-2.5">
+                {isSubmissionWindowOpen ? (
+                  <>
+                    <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-emerald-400 opacity-75"></span>
+                    <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-emerald-500"></span>
+                  </>
+                ) : (
+                  <span className="relative inline-flex h-2.5 w-2.5 rounded-full bg-amber-500"></span>
+                )}
+              </span>
+              <span className="font-semibold text-zinc-200">
+                {isWindowConfigured
+                  ? `Submissions open ${windowOpensStr} – close ${windowClosesStr} (IST)`
+                  : "Submissions schedule will be announced soon"}
+              </span>
+            </div>
+
+            <span
+              className={`inline-flex items-center self-start rounded-full px-3 py-1 text-[10px] font-semibold uppercase tracking-wider ${
+                isSubmissionWindowOpen
+                  ? "border border-emerald-500/30 bg-emerald-500/10 text-emerald-400"
+                  : isBeforeOpen
+                  ? "border border-amber-500/30 bg-amber-500/10 text-amber-400"
+                  : "border border-rose-500/30 bg-rose-500/10 text-rose-400"
+              }`}
+            >
+              {isSubmissionWindowOpen
+                ? "Window Open"
+                : isBeforeOpen
+                ? "Opens Soon"
+                : isAfterDeadline
+                ? "Submissions Closed"
+                : "Not Configured"}
+            </span>
+          </div>
+
+          {/* SUBMISSION ERROR ALERT */}
+          {submitErrorMessage && (
+            <div className="mt-4 flex items-start gap-3 rounded-2xl border border-rose-500/30 bg-rose-500/10 p-4 text-xs text-rose-300">
+              <AlertTriangle size={16} className="mt-0.5 shrink-0 text-rose-400" />
+              <div className="flex-1">
+                <span className="font-semibold">Submission Error: </span>
+                <span>{submitErrorMessage}</span>
+              </div>
+            </div>
+          )}
+
           <form
             onSubmit={handleSubmit}
             className="mt-6"
@@ -1247,9 +1369,9 @@ export default function ProjectPage() {
                           <button
                             type="submit"
                             disabled={
-                              isSubmitting
+                              isSubmitting || !isSubmissionWindowOpen || !isLeader || isSubmitted
                             }
-                            className="inline-flex items-center justify-center gap-2 rounded-xl bg-violet-400 px-6 py-3 text-xs font-semibold text-black transition hover:bg-violet-300 disabled:cursor-not-allowed disabled:opacity-60"
+                            className="inline-flex items-center justify-center gap-2 rounded-xl bg-violet-400 px-6 py-3 text-xs font-semibold text-black transition hover:bg-violet-300 disabled:cursor-not-allowed disabled:opacity-40"
                           >
                             {isSubmitting ? (
                               <>

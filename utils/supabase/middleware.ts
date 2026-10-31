@@ -23,9 +23,14 @@ export async function updateSession(request: NextRequest) {
     }
   )
 
-  const { data: { user } } = await supabase.auth.getUser()
-
   const { pathname } = request.nextUrl
+
+  // Allow keepalive without session inspection or redirection
+  if (pathname.startsWith('/api/keepalive')) {
+    return NextResponse.next({ request })
+  }
+
+  const { data: { user } } = await supabase.auth.getUser()
 
   // Redirect unauthenticated users away from /dashboard
   if (!user && pathname.startsWith('/dashboard')) {
@@ -100,4 +105,4 @@ export async function updateSession(request: NextRequest) {
   }
 
   return supabaseResponse
-}
+}
