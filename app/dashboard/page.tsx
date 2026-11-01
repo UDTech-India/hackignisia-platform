@@ -3,7 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import Notifications from "@/components/Notifications";
-import { formatISTDate } from "@/components/SubmissionCountdown";
+import { formatISTDate, formatISTDateTime } from "@/components/SubmissionCountdown";
 import {
   Bell,
   CalendarDays,
@@ -63,22 +63,12 @@ type SidebarLinkProps = {
 
 // Real activities are computed dynamically from user, team, and submission state
 
-const announcements = [
-  {
-    title: "Registration is now open",
-    description:
-      "Complete your participant profile and team details before the registration deadline.",
-    date: "Aug 2026",
-    important: true,
-  },
-  {
-    title: "Team formation",
-    description:
-      "Participants can create a team or join an existing team using a team code.",
-    date: "Aug 2026",
-    important: false,
-  },
-];
+const announcements: Array<{
+  title: string;
+  description: string;
+  date: string;
+  important?: boolean;
+}> = [];
 
 const eventDates = [
   {
@@ -854,11 +844,11 @@ export default function DashboardPage() {
 
                   <div className="mt-7 space-y-5">
                     {(() => {
-                      const opens = activeEvent?.submission_opens_at ? formatISTDate(activeEvent.submission_opens_at) : null;
-                      const deadline = activeEvent?.submission_deadline_at ? formatISTDate(activeEvent.submission_deadline_at) : null;
-                      const judgeStart = activeEvent?.judging_starts_at ? formatISTDate(activeEvent.judging_starts_at) : null;
-                      const judgeEnd = activeEvent?.judging_ends_at ? formatISTDate(activeEvent.judging_ends_at) : null;
-                      const results = activeEvent?.results_at ? formatISTDate(activeEvent.results_at) : null;
+                      const opens = activeEvent?.submission_opens_at ? formatISTDateTime(activeEvent.submission_opens_at) : null;
+                      const deadline = activeEvent?.submission_deadline_at ? formatISTDateTime(activeEvent.submission_deadline_at) : null;
+                      const judgeStart = activeEvent?.judging_starts_at ? formatISTDateTime(activeEvent.judging_starts_at) : null;
+                      const judgeEnd = activeEvent?.judging_ends_at ? formatISTDateTime(activeEvent.judging_ends_at) : null;
+                      const results = activeEvent?.results_at ? formatISTDateTime(activeEvent.results_at) : null;
 
                       const now = Date.now();
                       const opensMs = activeEvent?.submission_opens_at ? new Date(activeEvent.submission_opens_at).getTime() : 0;
@@ -866,16 +856,16 @@ export default function DashboardPage() {
                       const isSubmissionActive = opensMs && deadlineMs && now >= opensMs && now <= deadlineMs;
 
                       const dynamicDates = [
-                        { label: "Registration", date: "Open", status: "active" },
+                        { label: "Registration", date: "Open on Unstop", status: "active" },
                         { label: "Team Formation", date: "Active", status: "active" },
                         {
                           label: "Project Submission",
-                          date: opens && deadline ? `${opens} – ${deadline}` : "Coming Soon",
+                          date: opens && deadline ? `${opens} – ${deadline}` : "TBA",
                           status: isSubmissionActive ? "active" : "upcoming",
                         },
                         {
                           label: "Judging & Results",
-                          date: judgeStart && judgeEnd ? `${judgeStart} – ${judgeEnd}` : results ? `Results: ${results}` : "Upcoming",
+                          date: judgeStart && judgeEnd ? `${judgeStart} – ${judgeEnd}` : results ? `Results: ${results}` : "TBA",
                           status: "upcoming",
                         },
                       ];
@@ -913,8 +903,10 @@ export default function DashboardPage() {
                   </div>
 
                   <div className="mt-6 space-y-3">
-                    {announcements.map(
-                      (announcement) => (
+                    {announcements.length === 0 ? (
+                      <p className="text-xs text-zinc-500">No announcements yet</p>
+                    ) : (
+                      announcements.map((announcement) => (
                         <div
                           key={announcement.title}
                           className="rounded-xl border border-white/[0.07] bg-white/[0.015] p-4 transition hover:border-white/[0.12]"
@@ -939,7 +931,7 @@ export default function DashboardPage() {
                             {announcement.description}
                           </p>
                         </div>
-                      )
+                      ))
                     )}
                   </div>
                 </DashboardCard>

@@ -48,35 +48,35 @@ type Request = {
 const initialMembers: Member[] = [
   {
     id: 1,
-    name: "Aman Pathak",
-    email: "aman@example.com",
+    name: "Participant Name 1",
+    email: "participant1@example.com",
     role: "Team Leader",
-    initials: "AP",
+    initials: "P1",
     isLeader: true,
     status: "accepted",
   },
   {
     id: 2,
-    name: "Anusha Anu Prasad",
-    email: "anusha@example.com",
-    role: "Backend & Architecture",
-    initials: "AA",
+    name: "Participant Name 2",
+    email: "participant2@example.com",
+    role: "Developer",
+    initials: "P2",
     status: "accepted",
   },
   {
     id: 3,
-    name: "Team Member",
-    email: "member@example.com",
-    role: "Frontend Developer",
-    initials: "TM",
+    name: "Participant Name 3",
+    email: "participant3@example.com",
+    role: "Developer",
+    initials: "P3",
     status: "accepted",
   },
   {
     id: 4,
-    name: "Team Member",
-    email: "member2@example.com",
-    role: "AI / ML Developer",
-    initials: "TM",
+    name: "Participant Name 4",
+    email: "participant4@example.com",
+    role: "Developer",
+    initials: "P4",
     status: "accepted",
   },
 ];
@@ -84,9 +84,9 @@ const initialMembers: Member[] = [
 const initialRequests: Request[] = [
   {
     id: 101,
-    name: "Rahul Sharma",
-    email: "rahul@example.com",
-    initials: "RS",
+    name: "Participant Name 5",
+    email: "participant5@example.com",
+    initials: "P5",
   },
 ];
 

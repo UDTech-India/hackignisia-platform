@@ -9,10 +9,33 @@ import SubmissionCountdown, {
   formatISTDateTime,
   EventDates,
 } from "@/components/SubmissionCountdown";
+import {
+  sitePrizes,
+  siteSponsors,
+  siteFAQs,
+} from "@/lib/siteContent";
 
 export default function Home() {
   const [mobileMenuOpen, setMobileMenuOpen] = useState(false);
   const [eventData, setEventData] = useState<EventDates>(null);
+  const [tracks, setTracks] = useState<Array<{ id?: string; name: string; description: string | null }>>([
+    {
+      name: "AI & Machine Learning",
+      description: "Artificial intelligence, machine learning, and intelligent automation",
+    },
+    {
+      name: "Web & App Development",
+      description: "Full-stack web applications, mobile apps, and developer platforms",
+    },
+    {
+      name: "Social Impact & Innovation",
+      description: "Projects targeting social good, healthcare, education, or sustainability",
+    },
+    {
+      name: "Open Innovation",
+      description: "Wildcard innovations, novel hardware/software blends, and emerging technologies",
+    },
+  ]);
 
   useEffect(() => {
     const supabase = createClient();
@@ -24,6 +47,16 @@ export default function Home() {
       .maybeSingle()
       .then(({ data }) => {
         if (data) setEventData(data);
+      });
+
+    supabase
+      .from("tracks")
+      .select("id, name, description")
+      .order("created_at", { ascending: true })
+      .then(({ data }) => {
+        if (data && data.length > 0) {
+          setTracks(data);
+        }
       });
   }, []);
 
@@ -277,8 +310,8 @@ export default function Home() {
             <div className="mt-6 flex flex-wrap gap-3">
               <div className="rounded-full border border-white/10 bg-white/[0.03] px-4 py-2 text-xs text-zinc-400">
                 {eventData?.submission_opens_at && eventData?.submission_deadline_at
-                  ? `${formatISTDate(eventData.submission_opens_at)} – ${formatISTDate(eventData.submission_deadline_at)}`
-                  : "Dates Announced Soon"}
+                  ? `${formatISTDateTime(eventData.submission_opens_at)} – ${formatISTDateTime(eventData.submission_deadline_at)}`
+                  : "TBA"}
               </div>
 
               <div className="rounded-full border border-white/10 bg-white/[0.03] px-4 py-2 text-xs text-zinc-400">
@@ -315,31 +348,31 @@ export default function Home() {
             <div className="mt-14 grid max-w-3xl grid-cols-1 gap-6 border-t border-white/10 pt-7 sm:grid-cols-3">
               <div>
                 <div className="text-2xl font-bold text-white">
-                  800+
+                  4
                 </div>
 
                 <div className="mt-1 text-xs leading-5 text-zinc-500">
-                  Expected Registrations
+                  Hackathon Tracks
                 </div>
               </div>
 
               <div>
                 <div className="text-2xl font-bold text-white">
-                  200+
+                  Online
                 </div>
 
                 <div className="mt-1 text-xs leading-5 text-zinc-500">
-                  Expected Teams
+                  National Hackathon
                 </div>
               </div>
 
               <div>
                 <div className="text-2xl font-bold text-white">
-                  24–36h
+                  Free
                 </div>
 
                 <div className="mt-1 text-xs leading-5 text-zinc-500">
-                  Building Experience
+                  Registration on Unstop
                 </div>
               </div>
             </div>
@@ -485,83 +518,32 @@ export default function Home() {
           </div>
 
           {/* Track Cards */}
-          <div className="mt-14 grid gap-5 md:grid-cols-3">
-            {/* Track 01 */}
-            <div className="group rounded-3xl border border-white/10 bg-white/[0.03] p-7 transition duration-300 hover:-translate-y-1 hover:border-violet-400/40 hover:bg-violet-400/[0.04]">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium tracking-widest text-zinc-600">
-                  01
-                </span>
+          <div className="mt-14 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+            {tracks.map((track, idx) => {
+              const icons = ["◈", "◇", "✦", "◎"];
+              return (
+                <div
+                  key={track.name}
+                  className="group rounded-3xl border border-white/10 bg-white/[0.03] p-7 transition duration-300 hover:-translate-y-1 hover:border-violet-400/40 hover:bg-violet-400/[0.04]"
+                >
+                  <div className="flex items-center justify-between">
+                    <span className="text-xs font-medium tracking-widest text-zinc-600">
+                      {String(idx + 1).padStart(2, "0")}
+                    </span>
 
-                <span className="text-2xl">◈</span>
-              </div>
+                    <span className="text-2xl">{icons[idx % icons.length]}</span>
+                  </div>
 
-              <h3 className="mt-10 text-2xl font-semibold text-white">
-                AI &amp; Intelligent Systems
-              </h3>
+                  <h3 className="mt-10 text-xl font-semibold text-white">
+                    {track.name}
+                  </h3>
 
-              <p className="mt-4 text-sm leading-6 text-zinc-500">
-                Build intelligent solutions using AI, machine
-                learning, generative AI, computer vision, NLP,
-                or data-driven approaches to solve meaningful
-                real-world challenges.
-              </p>
-
-              <div className="mt-7 text-xs text-violet-400">
-                AI • ML • GenAI • Data
-              </div>
-            </div>
-
-            {/* Track 02 */}
-            <div className="group rounded-3xl border border-white/10 bg-white/[0.03] p-7 transition duration-300 hover:-translate-y-1 hover:border-violet-400/40 hover:bg-violet-400/[0.04]">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium tracking-widest text-zinc-600">
-                  02
-                </span>
-
-                <span className="text-2xl">◇</span>
-              </div>
-
-              <h3 className="mt-10 text-2xl font-semibold text-white">
-                Emerging Technology
-              </h3>
-
-              <p className="mt-4 text-sm leading-6 text-zinc-500">
-                Experiment with Web3, blockchain, cloud, IoT,
-                automation, cybersecurity, and other emerging
-                technologies to create practical and innovative
-                products.
-              </p>
-
-              <div className="mt-7 text-xs text-violet-400">
-                Web3 • Cloud • IoT • Security
-              </div>
-            </div>
-
-            {/* Track 03 */}
-            <div className="group rounded-3xl border border-white/10 bg-white/[0.03] p-7 transition duration-300 hover:-translate-y-1 hover:border-violet-400/40 hover:bg-violet-400/[0.04]">
-              <div className="flex items-center justify-between">
-                <span className="text-xs font-medium tracking-widest text-zinc-600">
-                  03
-                </span>
-
-                <span className="text-2xl">✦</span>
-              </div>
-
-              <h3 className="mt-10 text-2xl font-semibold text-white">
-                Social Impact &amp; Innovation
-              </h3>
-
-              <p className="mt-4 text-sm leading-6 text-zinc-500">
-                Use technology to address challenges in education,
-                accessibility, sustainability, healthcare,
-                agriculture, communities, and everyday life.
-              </p>
-
-              <div className="mt-7 text-xs text-violet-400">
-                Impact • Sustainability • Accessibility
-              </div>
-            </div>
+                  <p className="mt-4 text-sm leading-6 text-zinc-500">
+                    {track.description || "Build impactful solutions in this space."}
+                  </p>
+                </div>
+              );
+            })}
           </div>
 
           {/* CTA */}
@@ -642,7 +624,7 @@ export default function Home() {
                     </div>
 
                     <div className="text-sm text-zinc-500">
-                      Coming Soon
+                      On Unstop
                     </div>
                   </div>
 
@@ -705,8 +687,8 @@ export default function Home() {
 
                     <div className="rounded-full bg-violet-400/10 px-3 py-1 text-xs font-medium text-violet-300">
                       {eventData?.submission_opens_at && eventData?.submission_deadline_at
-                        ? `${formatISTDate(eventData.submission_opens_at)} – ${formatISTDate(eventData.submission_deadline_at)}`
-                        : "Coming Soon"}
+                        ? `${formatISTDateTime(eventData.submission_opens_at)} – ${formatISTDateTime(eventData.submission_deadline_at)}`
+                        : "TBA"}
                     </div>
                   </div>
 
@@ -739,7 +721,7 @@ export default function Home() {
                     <div className="text-sm text-zinc-500">
                       {eventData?.submission_deadline_at
                         ? `Deadline: ${formatISTDateTime(eventData.submission_deadline_at)}`
-                        : "Final Submission"}
+                        : "TBA"}
                     </div>
                   </div>
 
@@ -771,8 +753,8 @@ export default function Home() {
 
                     <div className="text-sm text-zinc-500">
                       {eventData?.judging_starts_at && eventData?.judging_ends_at
-                        ? `${formatISTDate(eventData.judging_starts_at)} – ${formatISTDate(eventData.judging_ends_at)}`
-                        : "Post Submission"}
+                        ? `${formatISTDateTime(eventData.judging_starts_at)} – ${formatISTDateTime(eventData.judging_ends_at)}`
+                        : "TBA"}
                     </div>
                   </div>
 
@@ -803,7 +785,9 @@ export default function Home() {
                     </div>
 
                     <div className="text-sm text-zinc-500">
-                      Coming Soon
+                      {eventData?.results_at
+                        ? formatISTDateTime(eventData.results_at)
+                        : "TBA"}
                     </div>
                   </div>
 
@@ -906,53 +890,27 @@ export default function Home() {
 
           {/* Recognition Cards */}
           <div className="mt-5 grid gap-5 md:grid-cols-3">
-            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-7">
-              <div className="text-xs font-medium tracking-widest text-zinc-600">
-                01
+            {sitePrizes.map((prize) => (
+              <div
+                key={prize.rank}
+                className="rounded-2xl border border-white/10 bg-white/[0.03] p-7"
+              >
+                <div className="flex items-center justify-between">
+                  <span className="text-xs font-medium tracking-widest text-zinc-600">
+                    {prize.rank}
+                  </span>
+                  <span className="text-xs text-violet-400">{prize.reward}</span>
+                </div>
+
+                <h3 className="mt-6 text-xl font-semibold text-white">
+                  {prize.title}
+                </h3>
+
+                <p className="mt-3 text-sm leading-6 text-zinc-500">
+                  {prize.description}
+                </p>
               </div>
-
-              <h3 className="mt-8 text-xl font-semibold text-white">
-                Winner
-              </h3>
-
-              <p className="mt-3 text-sm leading-6 text-zinc-500">
-                Recognition for the team delivering an exceptional
-                overall solution combining innovation, execution,
-                and impact.
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-7">
-              <div className="text-xs font-medium tracking-widest text-zinc-600">
-                02
-              </div>
-
-              <h3 className="mt-8 text-xl font-semibold text-white">
-                Runner-Up
-              </h3>
-
-              <p className="mt-3 text-sm leading-6 text-zinc-500">
-                Recognition for another standout project
-                demonstrating strong technical execution and
-                meaningful problem solving.
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-7">
-              <div className="text-xs font-medium tracking-widest text-zinc-600">
-                03
-              </div>
-
-              <h3 className="mt-8 text-xl font-semibold text-white">
-                Special Awards
-              </h3>
-
-              <p className="mt-3 text-sm leading-6 text-zinc-500">
-                Additional recognitions may be introduced for
-                exceptional ideas, sponsor challenges, innovation,
-                impact, or technical creativity.
-              </p>
-            </div>
+            ))}
           </div>
 
           {/* Sponsor Bounties */}
@@ -1058,53 +1016,24 @@ export default function Home() {
 
           {/* Partnership Types */}
           <div className="mt-5 grid gap-5 md:grid-cols-3">
-            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-7">
-              <div className="text-xs uppercase tracking-[0.18em] text-violet-400">
-                Technology
+            {siteSponsors.map((sponsor) => (
+              <div
+                key={sponsor.id}
+                className="rounded-2xl border border-white/10 bg-white/[0.03] p-7"
+              >
+                <div className="text-xs uppercase tracking-[0.18em] text-violet-400">
+                  {sponsor.category}
+                </div>
+
+                <h3 className="mt-4 text-xl font-semibold text-white">
+                  {sponsor.name}
+                </h3>
+
+                <p className="mt-3 text-sm leading-6 text-zinc-500">
+                  {sponsor.description}
+                </p>
               </div>
-
-              <h3 className="mt-4 text-xl font-semibold text-white">
-                Technology Partners
-              </h3>
-
-              <p className="mt-3 text-sm leading-6 text-zinc-500">
-                Provide developers with APIs, cloud credits,
-                tools, platforms, infrastructure, and technology
-                resources.
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-7">
-              <div className="text-xs uppercase tracking-[0.18em] text-violet-400">
-                Ecosystem
-              </div>
-
-              <h3 className="mt-4 text-xl font-semibold text-white">
-                Community Partners
-              </h3>
-
-              <p className="mt-3 text-sm leading-6 text-zinc-500">
-                Help us reach students, developers, creators, and
-                builders through communities, networks, and
-                collaborative initiatives.
-              </p>
-            </div>
-
-            <div className="rounded-2xl border border-white/10 bg-white/[0.03] p-7">
-              <div className="text-xs uppercase tracking-[0.18em] text-violet-400">
-                Support
-              </div>
-
-              <h3 className="mt-4 text-xl font-semibold text-white">
-                Sponsors &amp; Supporters
-              </h3>
-
-              <p className="mt-3 text-sm leading-6 text-zinc-500">
-                Support the event through sponsorships, prizes,
-                bounties, mentorship, resources, or other forms of
-                collaboration.
-              </p>
-            </div>
+            ))}
           </div>
 
           {/* Sponsor CTA */}
@@ -1127,7 +1056,7 @@ export default function Home() {
               </div>
 
               <a
-                href="mailto:amanpat649@gmail.com?subject=HackIGNISIA%202026%20Partnership"
+                href="mailto:support@udtech.com?subject=HackIGNISIA%202026%20Partnership"
                 className="btn-primary w-fit shrink-0"
               >
                 Become a Partner →
@@ -1177,163 +1106,32 @@ export default function Home() {
 
             {/* Questions */}
             <div className="space-y-3">
-              {/* FAQ 01 */}
-              <details className="group rounded-2xl border border-white/10 bg-white/[0.03]">
-                <summary className="flex cursor-pointer list-none items-center justify-between gap-5 p-6">
-                  <span className="text-sm font-medium text-white">
-                    Who can participate in HackIGNISIA?
-                  </span>
-
-                  <span className="text-xl text-zinc-500 transition-transform duration-200 group-open:rotate-45">
-                    +
-                  </span>
-                </summary>
-
-                <div className="border-t border-white/10 px-6 pb-6 pt-5">
-                  <p className="text-sm leading-6 text-zinc-500">
-                    HackIGNISIA is designed for students,
-                    developers, designers, and innovators interested
-                    in building technology-driven solutions.
-                    Detailed eligibility requirements will be
-                    announced with the registration guidelines.
-                  </p>
-                </div>
-              </details>
-
-              {/* FAQ 02 */}
-              <details className="group rounded-2xl border border-white/10 bg-white/[0.03]">
-                <summary className="flex cursor-pointer list-none items-center justify-between gap-5 p-6">
-                  <span className="text-sm font-medium text-white">
-                    Is HackIGNISIA online or offline?
-                  </span>
-
-                  <span className="text-xl text-zinc-500 transition-transform duration-200 group-open:rotate-45">
-                    +
-                  </span>
-                </summary>
-
-                <div className="border-t border-white/10 px-6 pb-6 pt-5">
-                  <p className="text-sm leading-6 text-zinc-500">
-                    HackIGNISIA 2026 is a national online
-                    hackathon. Participants can collaborate with
-                    their teammates remotely and submit their
-                    projects through the official platform.
-                  </p>
-                </div>
-              </details>
-
-              {/* FAQ 03 */}
-              <details className="group rounded-2xl border border-white/10 bg-white/[0.03]">
-                <summary className="flex cursor-pointer list-none items-center justify-between gap-5 p-6">
-                  <span className="text-sm font-medium text-white">
-                    Can I participate without a team?
-                  </span>
-
-                  <span className="text-xl text-zinc-500 transition-transform duration-200 group-open:rotate-45">
-                    +
-                  </span>
-                </summary>
-
-                <div className="border-t border-white/10 px-6 pb-6 pt-5">
-                  <p className="text-sm leading-6 text-zinc-500">
-                    Participants will be able to form teams through
-                    the HackIGNISIA platform. Team formation and
-                    maximum team size details will be shared in
-                    the official participation guidelines.
-                  </p>
-                </div>
-              </details>
-
-              {/* FAQ 04 */}
-              <details className="group rounded-2xl border border-white/10 bg-white/[0.03]">
-                <summary className="flex cursor-pointer list-none items-center justify-between gap-5 p-6">
-                  <span className="text-sm font-medium text-white">
-                    What can we build?
-                  </span>
-
-                  <span className="text-xl text-zinc-500 transition-transform duration-200 group-open:rotate-45">
-                    +
-                  </span>
-                </summary>
-
-                <div className="border-t border-white/10 px-6 pb-6 pt-5">
-                  <p className="text-sm leading-6 text-zinc-500">
-                    Projects can address real-world problems across
-                    areas such as AI, emerging technologies,
-                    sustainability, education, accessibility, and
-                    social impact.
-                  </p>
-                </div>
-              </details>
-
-              {/* FAQ 05 */}
-              <details className="group rounded-2xl border border-white/10 bg-white/[0.03]">
-                <summary className="flex cursor-pointer list-none items-center justify-between gap-5 p-6">
-                  <span className="text-sm font-medium text-white">
-                    How will projects be judged?
-                  </span>
-
-                  <span className="text-xl text-zinc-500 transition-transform duration-200 group-open:rotate-45">
-                    +
-                  </span>
-                </summary>
-
-                <div className="border-t border-white/10 px-6 pb-6 pt-5">
-                  <p className="text-sm leading-6 text-zinc-500">
-                    Projects are expected to be evaluated on
-                    innovation, technical implementation, relevance
-                    to the chosen problem, impact, and overall
-                    quality of the solution.
-                  </p>
-                </div>
-              </details>
-
-              {/* FAQ 06 */}
-              <details className="group rounded-2xl border border-white/10 bg-white/[0.03]">
-                <summary className="flex cursor-pointer list-none items-center justify-between gap-5 p-6">
-                  <span className="text-sm font-medium text-white">
-                    Will participants receive certificates?
-                  </span>
-
-                  <span className="text-xl text-zinc-500 transition-transform duration-200 group-open:rotate-45">
-                    +
-                  </span>
-                </summary>
-
-                <div className="border-t border-white/10 px-6 pb-6 pt-5">
-                  <p className="text-sm leading-6 text-zinc-500">
-                    Participation and achievement certificates are
-                    planned for HackIGNISIA 2026. Exact certificate
-                    eligibility and distribution details will be
-                    communicated to registered participants.
-                  </p>
-                </div>
-              </details>
-
-              {/* FAQ 07 */}
-              <details className="group rounded-2xl border border-white/10 bg-white/[0.03]">
-                <summary className="flex cursor-pointer list-none items-center justify-between gap-5 p-6">
-                  <span className="text-sm font-medium text-white">
-                    When is HackIGNISIA 2026?
-                  </span>
-
-                  <span className="text-xl text-zinc-500 transition-transform duration-200 group-open:rotate-45">
-                    +
-                  </span>
-                </summary>
-
-                <div className="border-t border-white/10 px-6 pb-6 pt-5">
-                  <p className="text-sm leading-6 text-zinc-500">
-                    HackIGNISIA 2026 submissions run from{" "}
-                    <span className="font-medium text-zinc-300">
-                      {eventData?.submission_opens_at && eventData?.submission_deadline_at
-                        ? `${formatISTDate(eventData.submission_opens_at)} to ${formatISTDate(eventData.submission_deadline_at)}`
-                        : "dates to be announced soon"}
+              {siteFAQs.map((faq) => (
+                <details
+                  key={faq.id}
+                  className="group rounded-2xl border border-white/10 bg-white/[0.03]"
+                >
+                  <summary className="flex cursor-pointer list-none items-center justify-between gap-5 p-6">
+                    <span className="text-sm font-medium text-white">
+                      {faq.question}
                     </span>
-                    .
-                  </p>
-                </div>
-              </details>
+
+                    <span className="text-xl text-zinc-500 transition-transform duration-200 group-open:rotate-45">
+                      +
+                    </span>
+                  </summary>
+
+                  <div className="border-t border-white/10 px-6 pb-6 pt-5">
+                    <p className="text-sm leading-6 text-zinc-500">
+                      {faq.isDateDynamic
+                        ? eventData?.submission_opens_at && eventData?.submission_deadline_at
+                          ? `HackIGNISIA 2026 submissions run from ${formatISTDateTime(eventData.submission_opens_at)} to ${formatISTDateTime(eventData.submission_deadline_at)}.`
+                          : "TBA"
+                        : faq.answer}
+                    </p>
+                  </div>
+                </details>
+              ))}
             </div>
           </div>
         </div>
@@ -1524,7 +1322,7 @@ export default function Home() {
 
               <span>
                 {eventData?.submission_opens_at && eventData?.submission_deadline_at
-                  ? `${formatISTDate(eventData.submission_opens_at)} – ${formatISTDate(eventData.submission_deadline_at)}`
+                  ? `${formatISTDateTime(eventData.submission_opens_at)} – ${formatISTDateTime(eventData.submission_deadline_at)}`
                   : "2026"}
               </span>
             </div>

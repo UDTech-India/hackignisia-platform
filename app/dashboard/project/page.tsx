@@ -32,6 +32,7 @@ import {
 
 import { ChangeEvent, FormEvent, useEffect, useMemo, useState } from "react";
 import { createClient } from "@/utils/supabase/client";
+import { formatISTDateTime } from "@/components/SubmissionCountdown";
 
 /* =========================================================
    TYPES
@@ -618,19 +619,19 @@ export default function ProjectPage() {
   const isSubmissionWindowOpen = isWindowConfigured && !isBeforeOpen && !isAfterDeadline;
 
   const windowOpensStr = eventData?.submission_opens_at
-    ? new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true }).format(new Date(eventData.submission_opens_at))
-    : "TBD";
+    ? formatISTDateTime(eventData.submission_opens_at)
+    : "TBA";
 
   const windowClosesStr = eventData?.submission_deadline_at
-    ? new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", day: "numeric", month: "short", year: "numeric", hour: "2-digit", minute: "2-digit", hour12: true }).format(new Date(eventData.submission_deadline_at))
-    : "TBD";
+    ? formatISTDateTime(eventData.submission_deadline_at)
+    : "TBA";
 
   function mapSubmitErrorMessage(rawMsg: string): string {
     if (rawMsg.includes("Submission deadline has passed")) {
-      return `The submission deadline has passed (${windowClosesStr} IST). Submissions are no longer accepted.`;
+      return `The submission deadline has passed (${windowClosesStr}). Submissions are no longer accepted.`;
     }
     if (rawMsg.includes("Submission window has not opened yet")) {
-      return `The submission window has not opened yet. Submissions open on ${windowOpensStr} IST.`;
+      return `The submission window has not opened yet. Submissions open on ${windowOpensStr}.`;
     }
     if (rawMsg.includes("Submission window is not configured")) {
       return "The submission window is not configured for this event. Please contact the organizers.";
@@ -1196,8 +1197,8 @@ export default function ProjectPage() {
               </span>
               <span className="font-semibold text-zinc-200">
                 {isWindowConfigured
-                  ? `Submissions open ${windowOpensStr} – close ${windowClosesStr} (IST)`
-                  : "Submissions schedule will be announced soon"}
+                  ? `Submissions open ${windowOpensStr} – close ${windowClosesStr}`
+                  : "TBA"}
               </span>
             </div>
 

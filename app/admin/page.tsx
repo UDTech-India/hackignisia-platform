@@ -62,42 +62,42 @@ type Submission = {
 
 const participants: Participant[] = [
   {
-    id: "IGN26-00482",
-    name: "Aman Pathak",
-    email: "aman@example.com",
-    college: "Maharishi University of Information Technology",
+    id: "IGN26-00001",
+    name: "Participant Name 1",
+    email: "participant1@example.com",
+    college: "College Name",
     role: "Participant",
     status: "Registered",
   },
   {
-    id: "IGN26-00483",
-    name: "Anusha Anu Prasad",
-    email: "anusha@example.com",
-    college: "MUIT",
+    id: "IGN26-00002",
+    name: "Participant Name 2",
+    email: "participant2@example.com",
+    college: "College Name",
     role: "Participant",
     status: "Registered",
   },
   {
-    id: "IGN26-00484",
-    name: "Rahul Sharma",
-    email: "rahul@example.com",
-    college: "Delhi University",
+    id: "IGN26-00003",
+    name: "Participant Name 3",
+    email: "participant3@example.com",
+    college: "College Name",
     role: "Participant",
     status: "Registered",
   },
   {
-    id: "IGN26-00485",
-    name: "Priya Singh",
-    email: "priya@example.com",
-    college: "Amity University",
+    id: "IGN26-00004",
+    name: "Participant Name 4",
+    email: "participant4@example.com",
+    college: "College Name",
     role: "Participant",
     status: "Pending",
   },
   {
-    id: "IGN26-00486",
-    name: "Arjun Mehta",
-    email: "arjun@example.com",
-    college: "Galgotias University",
+    id: "IGN26-00005",
+    name: "Participant Name 5",
+    email: "participant5@example.com",
+    college: "College Name",
     role: "Participant",
     status: "Registered",
   },
@@ -106,34 +106,34 @@ const participants: Participant[] = [
 const teams: Team[] = [
   {
     id: "TEAM-001",
-    name: "Team Vector",
-    leader: "Aman Pathak",
+    name: "Team Name 1",
+    leader: "Participant Name 1",
     members: 4,
     track: "AI & Machine Learning",
     status: "Active",
   },
   {
     id: "TEAM-002",
-    name: "CodeForge",
-    leader: "Rahul Sharma",
-    members: 5,
-    track: "Web & Full Stack",
+    name: "Team Name 2",
+    leader: "Participant Name 2",
+    members: 4,
+    track: "Web & App Development",
     status: "Active",
   },
   {
     id: "TEAM-003",
-    name: "InnovateX",
-    leader: "Priya Singh",
+    name: "Team Name 3",
+    leader: "Participant Name 3",
     members: 2,
-    track: "Social Impact",
+    track: "Social Impact & Innovation",
     status: "Incomplete",
   },
   {
     id: "TEAM-004",
-    name: "ByteBuilders",
-    leader: "Arjun Mehta",
-    members: 5,
-    track: "AI & Machine Learning",
+    name: "Team Name 4",
+    leader: "Participant Name 4",
+    members: 4,
+    track: "Open Innovation",
     status: "Active",
   },
 ];
@@ -141,30 +141,30 @@ const teams: Team[] = [
 const submissions: Submission[] = [
   {
     id: "SUB-001",
-    team: "Team Vector",
-    project: "AI-powered Emergency Response",
+    team: "Team Name 1",
+    project: "Project Title 1",
     track: "AI & Machine Learning",
     status: "Draft",
   },
   {
     id: "SUB-002",
-    team: "CodeForge",
-    project: "Smart Campus Platform",
-    track: "Web & Full Stack",
+    team: "Team Name 2",
+    project: "Project Title 2",
+    track: "Web & App Development",
     status: "Submitted",
   },
   {
     id: "SUB-003",
-    team: "InnovateX",
-    project: "Community Connect",
-    track: "Social Impact",
+    team: "Team Name 3",
+    project: "Project Title 3",
+    track: "Social Impact & Innovation",
     status: "Under Review",
   },
   {
     id: "SUB-004",
-    team: "ByteBuilders",
-    project: "Predictive Health Assistant",
-    track: "AI & Machine Learning",
+    team: "Team Name 4",
+    project: "Project Title 4",
+    track: "Open Innovation",
     status: "Submitted",
   },
 ];
@@ -496,6 +496,11 @@ export default function AdminDashboardPage() {
           {/* CONTENT */}
 
           <div className="mx-auto max-w-[1500px] px-4 py-8 sm:px-6 lg:px-10 lg:py-10">
+            {/* DEMO DATA BANNER */}
+            <div className="mb-6 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs font-medium text-amber-300">
+              Demo data. Not connected to the database yet.
+            </div>
+
             {/* HEADER */}
 
             <section>
