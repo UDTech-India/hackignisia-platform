@@ -3,6 +3,7 @@
 import Link from "next/link";
 import Image from "next/image";
 import Notifications from "@/components/Notifications";
+import { formatISTDate, formatISTDateTime } from "@/components/SubmissionCountdown";
 import {
   Bell,
   CalendarDays,
@@ -62,22 +63,12 @@ type SidebarLinkProps = {
 
 // Real activities are computed dynamically from user, team, and submission state
 
-const announcements = [
-  {
-    title: "Registration is now open",
-    description:
-      "Complete your participant profile and team details before the registration deadline.",
-    date: "Aug 2026",
-    important: true,
-  },
-  {
-    title: "Team formation",
-    description:
-      "Participants can create a team or join an existing team using a team code.",
-    date: "Aug 2026",
-    important: false,
-  },
-];
+const announcements: Array<{
+  title: string;
+  description: string;
+  date: string;
+  important?: boolean;
+}> = [];
 
 const eventDates = [
   {
@@ -113,6 +104,7 @@ export default function DashboardPage() {
   const [teamData, setTeamData] = useState<any>(null);
   const [teamMembersList, setTeamMembersList] = useState<any[]>([]);
   const [submissionData, setSubmissionData] = useState<any>(null);
+  const [activeEvent, setActiveEvent] = useState<any>(null);
   const supabase = createClient();
   const router = useRouter();
 
@@ -136,6 +128,17 @@ export default function DashboardPage() {
       }
 
       setProfile(profileData);
+
+      const { data: eventRes } = await supabase
+        .from("events")
+        .select("id, submission_opens_at, submission_deadline_at, judging_starts_at, judging_ends_at, results_at")
+        .eq("is_active", true)
+        .limit(1)
+        .maybeSingle();
+
+      if (eventRes) {
+        setActiveEvent(eventRes);
+      }
 
       // Fetch user's team membership
       const { data: myMember } = await supabase
@@ -840,17 +843,43 @@ export default function DashboardPage() {
                   />
 
                   <div className="mt-7 space-y-5">
-                    {eventDates.map((item, index) => (
-                      <TimelineItem
-                        key={item.label}
-                        label={item.label}
-                        date={item.date}
-                        active={item.status === "active"}
-                        last={
-                          index === eventDates.length - 1
-                        }
-                      />
-                    ))}
+                    {(() => {
+                      const opens = activeEvent?.submission_opens_at ? formatISTDateTime(activeEvent.submission_opens_at) : null;
+                      const deadline = activeEvent?.submission_deadline_at ? formatISTDateTime(activeEvent.submission_deadline_at) : null;
+                      const judgeStart = activeEvent?.judging_starts_at ? formatISTDateTime(activeEvent.judging_starts_at) : null;
+                      const judgeEnd = activeEvent?.judging_ends_at ? formatISTDateTime(activeEvent.judging_ends_at) : null;
+                      const results = activeEvent?.results_at ? formatISTDateTime(activeEvent.results_at) : null;
+
+                      const now = Date.now();
+                      const opensMs = activeEvent?.submission_opens_at ? new Date(activeEvent.submission_opens_at).getTime() : 0;
+                      const deadlineMs = activeEvent?.submission_deadline_at ? new Date(activeEvent.submission_deadline_at).getTime() : 0;
+                      const isSubmissionActive = opensMs && deadlineMs && now >= opensMs && now <= deadlineMs;
+
+                      const dynamicDates = [
+                        { label: "Registration", date: "Open on Unstop", status: "active" },
+                        { label: "Team Formation", date: "Active", status: "active" },
+                        {
+                          label: "Project Submission",
+                          date: opens && deadline ? `${opens} – ${deadline}` : "TBA",
+                          status: isSubmissionActive ? "active" : "upcoming",
+                        },
+                        {
+                          label: "Judging & Results",
+                          date: judgeStart && judgeEnd ? `${judgeStart} – ${judgeEnd}` : results ? `Results: ${results}` : "TBA",
+                          status: "upcoming",
+                        },
+                      ];
+
+                      return dynamicDates.map((item, index) => (
+                        <TimelineItem
+                          key={item.label}
+                          label={item.label}
+                          date={item.date}
+                          active={item.status === "active"}
+                          last={index === dynamicDates.length - 1}
+                        />
+                      ));
+                    })()}
                   </div>
                 </DashboardCard>
 
@@ -874,8 +903,10 @@ export default function DashboardPage() {
                   </div>
 
                   <div className="mt-6 space-y-3">
-                    {announcements.map(
-                      (announcement) => (
+                    {announcements.length === 0 ? (
+                      <p className="text-xs text-zinc-500">No announcements yet</p>
+                    ) : (
+                      announcements.map((announcement) => (
                         <div
                           key={announcement.title}
                           className="rounded-xl border border-white/[0.07] bg-white/[0.015] p-4 transition hover:border-white/[0.12]"
@@ -900,7 +931,7 @@ export default function DashboardPage() {
                             {announcement.description}
                           </p>
                         </div>
-                      )
+                      ))
                     )}
                   </div>
                 </DashboardCard>

@@ -28,61 +28,7 @@ type Announcement = {
   unread?: boolean;
 };
 
-const announcements: Announcement[] = [
-  {
-    id: 1,
-    title: "HackIGNISIA 2026 Registration is Open",
-    description:
-      "Participant registration is now open. Complete your profile and team details before the deadline.",
-    content:
-      "HackIGNISIA 2026 registration is officially open. Participants should complete their profile information, select their preferred track, and create or join a team. Keep checking the dashboard for important updates regarding the hackathon schedule.",
-    date: "August 2026",
-    category: "Registration",
-    important: true,
-    unread: true,
-  },
-  {
-    id: 2,
-    title: "Team Formation Guidelines",
-    description:
-      "Create your team or join an existing team using the team code shared by your team leader.",
-    content:
-      "Participants can create a new team or join an existing team using a valid team code. Team leaders can manage members and team information from the Team Dashboard.",
-    date: "August 2026",
-    category: "Teams",
-    unread: true,
-  },
-  {
-    id: 3,
-    title: "Project Submission Portal",
-    description:
-      "The project workspace will be used to prepare and submit your hackathon project.",
-    content:
-      "Your Project Dashboard will contain the project details, problem statement, proposed solution, technology stack, PPT upload and final submission information. Make sure all required fields are completed before submitting.",
-    date: "Aug 2026",
-    category: "Submission",
-  },
-  {
-    id: 4,
-    title: "Hackathon Schedule",
-    description:
-      "Official hackathon dates and detailed event timeline will be announced soon.",
-    content:
-      "The official schedule will include registration, team formation, project submission, judging and results. Participants will receive updates through the dashboard.",
-    date: "Aug 2026",
-    category: "Event",
-  },
-  {
-    id: 5,
-    title: "Important Participant Updates",
-    description:
-      "Keep your profile and contact information updated to receive important event communications.",
-    content:
-      "Participants should ensure that their email address, mobile number, college, course and other profile information are accurate. Important communication may be shared through the registered contact details.",
-    date: "Aug 2026",
-    category: "Information",
-  },
-];
+const announcements: Announcement[] = [];
 
 const categories = [
   "All",
@@ -615,7 +561,7 @@ function EmptyState() {
       </div>
 
       <h3 className="mt-5 text-sm font-semibold text-zinc-300">
-        No announcements found
+        No announcements yet
       </h3>
 
       <p className="mx-auto mt-2 max-w-md text-xs leading-5 text-zinc-700">

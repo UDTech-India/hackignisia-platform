@@ -21,15 +21,13 @@ CREATE TEMP TABLE test_results (
   details text
 ) ON COMMIT DROP;
 
-GRANT ALL ON test_results TO anon, authenticated;
-GRANT USAGE, SELECT ON SEQUENCE test_results_id_seq TO anon, authenticated;
-
 CREATE TEMP TABLE temp_test_fixtures (
   key text PRIMARY KEY,
   val uuid NOT NULL
 ) ON COMMIT DROP;
 
-GRANT ALL ON temp_test_fixtures TO anon, authenticated;
+GRANT ALL ON test_results TO anon, authenticated;
+GRANT USAGE, SELECT ON SEQUENCE test_results_id_seq TO anon, authenticated;
 GRANT SELECT ON temp_test_fixtures TO anon, authenticated;
 
 -- Temporarily disable profile column protection trigger for fixture creation
@@ -81,6 +79,25 @@ DECLARE
   v_team_jp_id uuid := gen_random_uuid();
   v_sub_jp_id uuid := gen_random_uuid();
   v_eval_jp_id uuid := gen_random_uuid();
+
+  -- Additional test fixtures for submission/judging window and assignment checks
+  v_event_null_opens_id uuid := gen_random_uuid();
+  v_team_null_opens_id uuid := gen_random_uuid();
+  v_sub_null_opens_id uuid := gen_random_uuid();
+
+  v_event_null_dl_id uuid := gen_random_uuid();
+  v_team_null_dl_id uuid := gen_random_uuid();
+  v_sub_null_dl_id uuid := gen_random_uuid();
+
+  v_event_null_judge_id uuid := gen_random_uuid();
+  v_team_null_judge_id uuid := gen_random_uuid();
+  v_sub_null_judge_id uuid := gen_random_uuid();
+  v_eval_null_judge_id uuid := gen_random_uuid();
+
+  v_judge_del_id uuid := gen_random_uuid();
+  v_team_del_ja_id uuid := gen_random_uuid();
+  v_sub_del_ja_id uuid := gen_random_uuid();
+  v_eval_del_ja_id uuid := gen_random_uuid();
 BEGIN
   -- 1. Populate temp_test_fixtures
   INSERT INTO temp_test_fixtures (key, val) VALUES
@@ -108,7 +125,13 @@ BEGIN
     ('eval_jf_id', v_eval_jf_id),
     ('event_judge_past_id', v_event_judge_past_id),
     ('sub_jp_id', v_sub_jp_id),
-    ('eval_jp_id', v_eval_jp_id);
+    ('eval_jp_id', v_eval_jp_id),
+    ('sub_null_opens_id', v_sub_null_opens_id),
+    ('event_null_dl_id', v_event_null_dl_id),
+    ('sub_null_dl_id', v_sub_null_dl_id),
+    ('eval_null_judge_id', v_eval_null_judge_id),
+    ('judge_del_id', v_judge_del_id),
+    ('eval_del_ja_id', v_eval_del_ja_id);
 
   -- 2. Create users in auth.users (trigger handle_new_user auto-inserts into public.profiles)
   INSERT INTO auth.users (id, instance_id, aud, role, email, encrypted_password, email_confirmed_at, raw_app_meta_data, raw_user_meta_data, created_at, updated_at)
@@ -118,11 +141,12 @@ BEGIN
     (v_judge_ai_id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'judge_ai@fixture.test', 'secret', now(), '{"provider":"email","providers":["email"]}', '{"full_name":"Fixture Judge AI"}', now(), now()),
     (v_judge_ai_2_id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'judge_ai_2@fixture.test', 'secret', now(), '{"provider":"email","providers":["email"]}', '{"full_name":"Fixture Judge AI 2"}', now(), now()),
     (v_judge_web_id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'judge_web@fixture.test', 'secret', now(), '{"provider":"email","providers":["email"]}', '{"full_name":"Fixture Judge Web"}', now(), now()),
-    (v_admin_id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'admin@fixture.test', 'secret', now(), '{"provider":"email","providers":["email"]}', '{"full_name":"Fixture Admin"}', now(), now());
+    (v_admin_id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'admin@fixture.test', 'secret', now(), '{"provider":"email","providers":["email"]}', '{"full_name":"Fixture Admin"}', now(), now()),
+    (v_judge_del_id, '00000000-0000-0000-0000-000000000000', 'authenticated', 'authenticated', 'judge_del@fixture.test', 'secret', now(), '{"provider":"email","providers":["email"]}', '{"full_name":"Fixture Judge Deleted"}', now(), now());
 
   -- Update profile roles while tr_protect_profile_columns is disabled
   UPDATE public.profiles SET platform_role = 'participant' WHERE id IN (v_leader_id, v_member_id);
-  UPDATE public.profiles SET platform_role = 'judge' WHERE id IN (v_judge_ai_id, v_judge_ai_2_id, v_judge_web_id);
+  UPDATE public.profiles SET platform_role = 'judge' WHERE id IN (v_judge_ai_id, v_judge_ai_2_id, v_judge_web_id, v_judge_del_id);
   UPDATE public.profiles SET platform_role = 'admin' WHERE id = v_admin_id;
 
   -- 3. Ensure official tracks exist
@@ -131,16 +155,18 @@ BEGIN
     ('Web & App Development', 'Web Track')
   ON CONFLICT (name) DO NOTHING;
 
-  -- 4. Create primary event (includes required slug NOT NULL column)
+  -- 4. Create primary event (includes required slug NOT NULL column and explicit window dates)
   INSERT INTO public.events (
     id, slug, name, description, is_active,
     registration_opens_at, registration_closes_at,
-    submission_deadline_at, judging_starts_at, judging_ends_at
+    submission_opens_at, submission_deadline_at,
+    judging_starts_at, judging_ends_at
   ) VALUES (
     v_event_id, 'fixture-main-' || v_event_id::text,
     'Hardening Main Event', 'Main event for security tests', true,
     now() - interval '2 days', now() + interval '2 days',
-    now() + interval '2 days', now() - interval '1 day', now() + interval '2 days'
+    now() - interval '2 days', now() + interval '2 days',
+    now() - interval '1 day', now() + interval '2 days'
   );
 
   INSERT INTO public.event_rubrics (event_id, criteria) VALUES (
@@ -221,9 +247,9 @@ BEGIN
   INSERT INTO public.submission_files (submission_id, file_path, file_type, uploaded_by)
   VALUES (v_sub_no_track_id, 'fixture/file3.pdf', 'application/pdf', v_leader_id);
 
-  -- 9. Timing event: window opens in future
-  INSERT INTO public.events (id, slug, name, registration_opens_at, submission_deadline_at)
-  VALUES (v_event_future_id, 'fixture-fut-' || v_event_future_id::text, 'Future Event', now() + interval '1 day', now() + interval '3 days');
+  -- 9. Timing event: submission window opens in future
+  INSERT INTO public.events (id, slug, name, submission_opens_at, submission_deadline_at, judging_starts_at, judging_ends_at)
+  VALUES (v_event_future_id, 'fixture-fut-' || v_event_future_id::text, 'Future Event', now() + interval '1 day', now() + interval '3 days', now() + interval '4 days', now() + interval '5 days');
   INSERT INTO public.teams (id, event_id, name, team_code, created_by)
   VALUES (v_team_future_id, v_event_future_id, 'Future Team', 'TC' || substring(replace(v_team_future_id::text, '-', ''), 1, 10), v_leader_id);
   INSERT INTO public.submissions (id, team_id, title, problem_statement, solution, track, status)
@@ -232,8 +258,8 @@ BEGIN
   VALUES (v_sub_future_id, 'fixture/file4.pdf', 'application/pdf', v_leader_id);
 
   -- 10. Timing event: submission deadline in past
-  INSERT INTO public.events (id, slug, name, registration_opens_at, submission_deadline_at)
-  VALUES (v_event_past_id, 'fixture-past-' || v_event_past_id::text, 'Past Event', now() - interval '3 days', now() - interval '1 hour');
+  INSERT INTO public.events (id, slug, name, submission_opens_at, submission_deadline_at, judging_starts_at, judging_ends_at)
+  VALUES (v_event_past_id, 'fixture-past-' || v_event_past_id::text, 'Past Event', now() - interval '3 days', now() - interval '1 hour', now() + interval '1 day', now() + interval '2 days');
   INSERT INTO public.teams (id, event_id, name, team_code, created_by)
   VALUES (v_team_past_id, v_event_past_id, 'Past Team', 'TC' || substring(replace(v_team_past_id::text, '-', ''), 1, 10), v_leader_id);
   INSERT INTO public.submissions (id, team_id, title, problem_statement, solution, track, status)
@@ -241,9 +267,29 @@ BEGIN
   INSERT INTO public.submission_files (submission_id, file_path, file_type, uploaded_by)
   VALUES (v_sub_past_id, 'fixture/file5.pdf', 'application/pdf', v_leader_id);
 
-  -- 11. Judging timing: judging_starts_at in future (submissions pre-submitted via RPC bypass flag)
-  INSERT INTO public.events (id, slug, name, judging_starts_at, judging_ends_at)
-  VALUES (v_event_judge_future_id, 'fixture-jf-' || v_event_judge_future_id::text, 'JF Event', now() + interval '1 day', now() + interval '3 days');
+  -- 11. Edge case event: submission_opens_at IS NULL
+  INSERT INTO public.events (id, slug, name, submission_opens_at, submission_deadline_at, judging_starts_at, judging_ends_at)
+  VALUES (v_event_null_opens_id, 'fixture-null-opens-' || v_event_null_opens_id::text, 'Null Opens Event', NULL, now() + interval '3 days', now() + interval '4 days', now() + interval '5 days');
+  INSERT INTO public.teams (id, event_id, name, team_code, created_by)
+  VALUES (v_team_null_opens_id, v_event_null_opens_id, 'Null Opens Team', 'TC' || substring(replace(v_team_null_opens_id::text, '-', ''), 1, 10), v_leader_id);
+  INSERT INTO public.submissions (id, team_id, title, problem_statement, solution, track, status)
+  VALUES (v_sub_null_opens_id, v_team_null_opens_id, 'Null Opens Project', 'Prob', 'Sol', 'AI & Machine Learning', 'draft');
+  INSERT INTO public.submission_files (submission_id, file_path, file_type, uploaded_by)
+  VALUES (v_sub_null_opens_id, 'fixture/file_null_opens.pdf', 'application/pdf', v_leader_id);
+
+  -- 12. Edge case event: submission_deadline_at IS NULL
+  INSERT INTO public.events (id, slug, name, submission_opens_at, submission_deadline_at, judging_starts_at, judging_ends_at)
+  VALUES (v_event_null_dl_id, 'fixture-null-dl-' || v_event_null_dl_id::text, 'Null DL Event', now() - interval '2 days', NULL, now() + interval '4 days', now() + interval '5 days');
+  INSERT INTO public.teams (id, event_id, name, team_code, created_by)
+  VALUES (v_team_null_dl_id, v_event_null_dl_id, 'Null DL Team', 'TC' || substring(replace(v_team_null_dl_id::text, '-', ''), 1, 10), v_leader_id);
+  INSERT INTO public.submissions (id, team_id, title, problem_statement, solution, track, status)
+  VALUES (v_sub_null_dl_id, v_team_null_dl_id, 'Null DL Project', 'Prob', 'Sol', 'AI & Machine Learning', 'draft');
+  INSERT INTO public.submission_files (submission_id, file_path, file_type, uploaded_by)
+  VALUES (v_sub_null_dl_id, 'fixture/file_null_dl.pdf', 'application/pdf', v_leader_id);
+
+  -- 13. Judging timing: judging_starts_at in future (submissions pre-submitted via RPC bypass flag)
+  INSERT INTO public.events (id, slug, name, submission_opens_at, submission_deadline_at, judging_starts_at, judging_ends_at)
+  VALUES (v_event_judge_future_id, 'fixture-jf-' || v_event_judge_future_id::text, 'JF Event', now() - interval '4 days', now() - interval '1 day', now() + interval '1 day', now() + interval '3 days');
   INSERT INTO public.event_rubrics (event_id, criteria) VALUES (v_event_judge_future_id, '{"innovation":{"max":25}}'::jsonb);
   INSERT INTO public.teams (id, event_id, name, team_code, created_by)
   VALUES (v_team_jf_id, v_event_judge_future_id, 'JF Team', 'TC' || substring(replace(v_team_jf_id::text, '-', ''), 1, 10), v_leader_id);
@@ -258,9 +304,9 @@ BEGIN
   INSERT INTO public.evaluations (id, submission_id, judge_id, status, scores)
   VALUES (v_eval_jf_id, v_sub_jf_id, v_judge_ai_id, 'draft', '{"innovation": 20}'::jsonb);
 
-  -- 12. Judging timing: judging_ends_at in past (submissions pre-submitted via RPC bypass flag)
-  INSERT INTO public.events (id, slug, name, judging_starts_at, judging_ends_at)
-  VALUES (v_event_judge_past_id, 'fixture-jp-' || v_event_judge_past_id::text, 'JP Event', now() - interval '3 days', now() - interval '1 hour');
+  -- 14. Judging timing: judging_ends_at in past (submissions pre-submitted via RPC bypass flag)
+  INSERT INTO public.events (id, slug, name, submission_opens_at, submission_deadline_at, judging_starts_at, judging_ends_at)
+  VALUES (v_event_judge_past_id, 'fixture-jp-' || v_event_judge_past_id::text, 'JP Event', now() - interval '5 days', now() - interval '4 days', now() - interval '3 days', now() - interval '1 hour');
   INSERT INTO public.event_rubrics (event_id, criteria) VALUES (v_event_judge_past_id, '{"innovation":{"max":25}}'::jsonb);
   INSERT INTO public.teams (id, event_id, name, team_code, created_by)
   VALUES (v_team_jp_id, v_event_judge_past_id, 'JP Team', 'TC' || substring(replace(v_team_jp_id::text, '-', ''), 1, 10), v_leader_id);
@@ -272,6 +318,37 @@ BEGIN
 
   INSERT INTO public.evaluations (id, submission_id, judge_id, status, scores)
   VALUES (v_eval_jp_id, v_sub_jp_id, v_judge_ai_id, 'draft', '{"innovation": 20}'::jsonb);
+
+  -- 15. Judging timing: judging dates NULL
+  INSERT INTO public.events (id, slug, name, submission_opens_at, submission_deadline_at, judging_starts_at, judging_ends_at)
+  VALUES (v_event_null_judge_id, 'fixture-null-jd-' || v_event_null_judge_id::text, 'Null JD Event', now() - interval '4 days', now() - interval '2 days', NULL, NULL);
+  INSERT INTO public.event_rubrics (event_id, criteria) VALUES (v_event_null_judge_id, '{"innovation":{"max":25}}'::jsonb);
+  INSERT INTO public.teams (id, event_id, name, team_code, created_by)
+  VALUES (v_team_null_judge_id, v_event_null_judge_id, 'Null JD Team', 'TC' || substring(replace(v_team_null_judge_id::text, '-', ''), 1, 10), v_leader_id);
+
+  INSERT INTO public.submissions (id, team_id, title, problem_statement, solution, track, status, submitted_at)
+  VALUES (v_sub_null_judge_id, v_team_null_judge_id, 'Null JD Project', 'Prob', 'Sol', 'AI & Machine Learning', 'submitted', now());
+  INSERT INTO public.submission_files (submission_id, file_path, file_type, uploaded_by)
+  VALUES (v_sub_null_judge_id, 'fixture/file_null_jd.pdf', 'application/pdf', v_leader_id);
+
+  INSERT INTO public.evaluations (id, submission_id, judge_id, status, scores)
+  VALUES (v_eval_null_judge_id, v_sub_null_judge_id, v_judge_ai_id, 'draft', '{"innovation": 20}'::jsonb);
+
+  -- 16. Judge assignment deleted scenario (submission submitted on main event)
+  INSERT INTO public.teams (id, event_id, name, team_code, created_by)
+  VALUES (v_team_del_ja_id, v_event_id, 'Del JA Team', 'TC' || substring(replace(v_team_del_ja_id::text, '-', ''), 1, 10), v_leader_id);
+
+  INSERT INTO public.submissions (id, team_id, title, problem_statement, solution, track, status, submitted_at)
+  VALUES (v_sub_del_ja_id, v_team_del_ja_id, 'Del JA Project', 'Prob', 'Sol', 'AI & Machine Learning', 'submitted', now());
+  INSERT INTO public.submission_files (submission_id, file_path, file_type, uploaded_by)
+  VALUES (v_sub_del_ja_id, 'fixture/file_del_ja.pdf', 'application/pdf', v_leader_id);
+
+  INSERT INTO public.evaluations (id, submission_id, judge_id, status, scores)
+  VALUES (v_eval_del_ja_id, v_sub_del_ja_id, v_judge_del_id, 'draft', '{"innovation": 20, "technical": 20, "impact": 20, "design": 20}'::jsonb);
+
+  -- Explicitly simulate creation and deletion of assignment
+  INSERT INTO public.judge_assignments (judge_id, track) VALUES (v_judge_del_id, 'AI & Machine Learning');
+  DELETE FROM public.judge_assignments WHERE judge_id = v_judge_del_id;
 
   PERFORM set_config('app.submitting_via_rpc', 'false', true);
 
@@ -303,6 +380,8 @@ BEGIN
     v_passed := true;
   EXCEPTION WHEN OTHERS THEN
     v_err := SQLERRM;
+    -- Raised by Postgres privilege check from REVOKE EXECUTE ON FUNCTION public.submit_project(uuid) FROM PUBLIC, anon
+    -- in 20261031000000_submission_window.sql (or RAISE 'Not authenticated' in line 57)
     IF v_err LIKE '%permission denied%' OR v_err LIKE '%Not authenticated%' THEN
       INSERT INTO test_results (test_name, status, details) VALUES ('1. anon submit_project rejected', 'PASS', v_err);
     ELSE
@@ -320,6 +399,8 @@ BEGIN
     v_passed := true;
   EXCEPTION WHEN OTHERS THEN
     v_err := SQLERRM;
+    -- Raised by Postgres privilege check from REVOKE EXECUTE ON FUNCTION public.finalize_evaluation(uuid) FROM PUBLIC, anon
+    -- in 20261031000000_submission_window.sql (or RAISE 'Not authenticated' in line 152)
     IF v_err LIKE '%permission denied%' OR v_err LIKE '%Not authenticated%' THEN
       INSERT INTO test_results (test_name, status, details) VALUES ('2. anon finalize_evaluation rejected', 'PASS', v_err);
     ELSE
@@ -355,6 +436,7 @@ BEGIN
     v_passed := true;
   EXCEPTION WHEN OTHERS THEN
     v_err := SQLERRM;
+    -- Raised by submit_project(uuid) in 20261031000000_submission_window.sql: 'Not authenticated'
     IF v_err LIKE '%Not authenticated%' THEN
       INSERT INTO test_results (test_name, status, details) VALUES ('3. null auth.uid() submit_project rejected', 'PASS', v_err);
     ELSE
@@ -372,6 +454,7 @@ BEGIN
     v_passed := true;
   EXCEPTION WHEN OTHERS THEN
     v_err := SQLERRM;
+    -- Raised by finalize_evaluation(uuid) in 20261031000000_submission_window.sql: 'Not authenticated'
     IF v_err LIKE '%Not authenticated%' THEN
       INSERT INTO test_results (test_name, status, details) VALUES ('4. null auth.uid() finalize_evaluation rejected', 'PASS', v_err);
     ELSE
@@ -405,6 +488,8 @@ BEGIN
     v_passed := true;
   EXCEPTION WHEN OTHERS THEN
     v_err := SQLERRM;
+    -- Raised by compute_evaluation_score() in 20261001000000_hardening.sql:
+    -- RAISE EXCEPTION 'Score value for criterion % must be a number', v_key;
     IF v_err LIKE '%must be a number%' THEN
       INSERT INTO test_results (test_name, status, details) VALUES ('5a. null score value rejected', 'PASS', v_err);
     ELSE
@@ -423,6 +508,8 @@ BEGIN
     v_passed := true;
   EXCEPTION WHEN OTHERS THEN
     v_err := SQLERRM;
+    -- Raised by compute_evaluation_score() in 20261001000000_hardening.sql:
+    -- RAISE EXCEPTION 'Score value for criterion % must be a number', v_key;
     IF v_err LIKE '%must be a number%' THEN
       INSERT INTO test_results (test_name, status, details) VALUES ('5b. string score rejected', 'PASS', v_err);
     ELSE
@@ -433,22 +520,24 @@ BEGIN
     INSERT INTO test_results (test_name, status, details) VALUES ('5b. string score rejected', 'FAIL', 'Succeeded unexpectedly');
   END IF;
 
-  -- 5c. Nested object score
+  -- 5c. String NaN score
   v_passed := false;
   BEGIN
     INSERT INTO public.evaluations (submission_id, judge_id, status, scores)
-    VALUES (v_sub_id, v_judge_ai_2_id, 'draft', '{"innovation": {"pts": 25}}'::jsonb);
+    VALUES (v_sub_id, v_judge_ai_2_id, 'draft', '{"innovation": "NaN"}'::jsonb);
     v_passed := true;
   EXCEPTION WHEN OTHERS THEN
     v_err := SQLERRM;
+    -- Raised by compute_evaluation_score() in 20261001000000_hardening.sql:
+    -- RAISE EXCEPTION 'Score value for criterion % must be a number', v_key;
     IF v_err LIKE '%must be a number%' THEN
-      INSERT INTO test_results (test_name, status, details) VALUES ('5c. object score rejected', 'PASS', v_err);
+      INSERT INTO test_results (test_name, status, details) VALUES ('5c. NaN score rejected', 'PASS', v_err);
     ELSE
-      INSERT INTO test_results (test_name, status, details) VALUES ('5c. object score rejected', 'FAIL', 'Unexpected: ' || v_err);
+      INSERT INTO test_results (test_name, status, details) VALUES ('5c. NaN score rejected', 'FAIL', 'Unexpected: ' || v_err);
     END IF;
   END;
   IF v_passed THEN
-    INSERT INTO test_results (test_name, status, details) VALUES ('5c. object score rejected', 'FAIL', 'Succeeded unexpectedly');
+    INSERT INTO test_results (test_name, status, details) VALUES ('5c. NaN score rejected', 'FAIL', 'Succeeded unexpectedly');
   END IF;
 
   -- 5d. Score exceeding max
@@ -459,6 +548,8 @@ BEGIN
     v_passed := true;
   EXCEPTION WHEN OTHERS THEN
     v_err := SQLERRM;
+    -- Raised by compute_evaluation_score() in 20261001000000_hardening.sql:
+    -- RAISE EXCEPTION 'Score for criterion "%" (%) exceeds maximum allowed (%)', v_key, v_score, v_max;
     IF v_err LIKE '%exceeds maximum allowed%' THEN
       INSERT INTO test_results (test_name, status, details) VALUES ('5d. score exceeding max rejected', 'PASS', v_err);
     ELSE
@@ -498,6 +589,8 @@ BEGIN
     v_passed := true;
   EXCEPTION WHEN OTHERS THEN
     v_err := SQLERRM;
+    -- Raised by compute_evaluation_score() in 20261001000000_hardening.sql:
+    -- RAISE EXCEPTION 'Rubric criterion % has no maximum score configured', v_key;
     IF v_err LIKE '%no maximum score configured%' THEN
       INSERT INTO test_results (test_name, status, details) VALUES ('6. rubric criterion without max rejected', 'PASS', v_err);
     ELSE
@@ -548,6 +641,8 @@ BEGIN
     v_passed := true;
   EXCEPTION WHEN OTHERS THEN
     v_err := SQLERRM;
+    -- Blocked by submissions_insert RLS WITH CHECK (status = 'draft') or trigger in 20261001000000_hardening.sql:
+    -- RAISE EXCEPTION 'New submissions must start as draft';
     IF v_err LIKE '%row-level security%' OR v_err LIKE '%New submissions must start as draft%' THEN
       INSERT INTO test_results (test_name, status, details) VALUES ('7a. direct INSERT status=submitted rejected', 'PASS', v_err);
     ELSE
@@ -567,6 +662,8 @@ BEGIN
     v_passed := true;
   EXCEPTION WHEN OTHERS THEN
     v_err := SQLERRM;
+    -- Raised by protect_submission_status() in 20261001000000_hardening.sql:
+    -- RAISE EXCEPTION 'Cannot modify submission status directly — use the submit endpoint';
     IF v_err LIKE '%Cannot modify submission status directly%' THEN
       INSERT INTO test_results (test_name, status, details) VALUES ('7b. direct UPDATE status=submitted rejected', 'PASS', v_err);
     ELSE
@@ -605,6 +702,8 @@ BEGIN
     v_passed := true;
   EXCEPTION WHEN OTHERS THEN
     v_err := SQLERRM;
+    -- Raised by protect_evaluation_status() in 20261001000000_hardening.sql:
+    -- RAISE EXCEPTION 'New evaluations must start as draft';
     IF v_err LIKE '%New evaluations must start as draft%' THEN
       INSERT INTO test_results (test_name, status, details) VALUES ('8. direct INSERT eval status=final rejected', 'PASS', v_err);
     ELSE
@@ -672,6 +771,8 @@ BEGIN
     v_passed := true;
   EXCEPTION WHEN OTHERS THEN
     v_err := SQLERRM;
+    -- Raised by protect_profile_columns() in 20260923000000_secure_profiles_columns.sql:
+    -- RAISE EXCEPTION 'Cannot update protected columns: platform_role or payment_status';
     IF v_err LIKE '%Cannot update protected columns%' THEN
       INSERT INTO test_results (test_name, status, details) VALUES ('10a. participant edit platform_role rejected', 'PASS', v_err);
     ELSE
@@ -689,6 +790,8 @@ BEGIN
     v_passed := true;
   EXCEPTION WHEN OTHERS THEN
     v_err := SQLERRM;
+    -- Raised by protect_profile_columns() in 20260923000000_secure_profiles_columns.sql:
+    -- RAISE EXCEPTION 'Cannot update protected columns: platform_role or payment_status';
     IF v_err LIKE '%Cannot update protected columns%' THEN
       INSERT INTO test_results (test_name, status, details) VALUES ('10b. participant edit payment_status rejected', 'PASS', v_err);
     ELSE
@@ -714,6 +817,8 @@ DECLARE
   v_sub_no_track_id uuid;
   v_sub_future_id uuid;
   v_sub_past_id uuid;
+  v_sub_null_opens_id uuid;
+  v_sub_null_dl_id uuid;
   v_err text;
   v_passed boolean := false;
 BEGIN
@@ -723,6 +828,8 @@ BEGIN
   SELECT val INTO v_sub_no_track_id FROM temp_test_fixtures WHERE key = 'sub_no_track_id';
   SELECT val INTO v_sub_future_id FROM temp_test_fixtures WHERE key = 'sub_future_id';
   SELECT val INTO v_sub_past_id FROM temp_test_fixtures WHERE key = 'sub_past_id';
+  SELECT val INTO v_sub_null_opens_id FROM temp_test_fixtures WHERE key = 'sub_null_opens_id';
+  SELECT val INTO v_sub_null_dl_id FROM temp_test_fixtures WHERE key = 'sub_null_dl_id';
 
   v_claims := '{"sub": "' || v_leader_id || '", "role": "authenticated"}';
   EXECUTE 'SET LOCAL ROLE authenticated';
@@ -734,6 +841,8 @@ BEGIN
     v_passed := true;
   EXCEPTION WHEN OTHERS THEN
     v_err := SQLERRM;
+    -- Raised by submit_project(uuid) in 20261031000000_submission_window.sql:
+    -- RAISE EXCEPTION 'At least one presentation file is required before submitting';
     IF v_err LIKE '%presentation file is required%' THEN
       INSERT INTO test_results (test_name, status, details) VALUES ('11a. submit missing file rejected', 'PASS', v_err);
     ELSE
@@ -751,6 +860,8 @@ BEGIN
     v_passed := true;
   EXCEPTION WHEN OTHERS THEN
     v_err := SQLERRM;
+    -- Raised by submit_project(uuid) in 20261031000000_submission_window.sql:
+    -- RAISE EXCEPTION 'Project title is required';
     IF v_err LIKE '%Project title is required%' THEN
       INSERT INTO test_results (test_name, status, details) VALUES ('11b. submit empty title rejected', 'PASS', v_err);
     ELSE
@@ -768,6 +879,8 @@ BEGIN
     v_passed := true;
   EXCEPTION WHEN OTHERS THEN
     v_err := SQLERRM;
+    -- Raised by submit_project(uuid) in 20261031000000_submission_window.sql:
+    -- RAISE EXCEPTION 'Project track is required';
     IF v_err LIKE '%Project track is required%' THEN
       INSERT INTO test_results (test_name, status, details) VALUES ('11c. submit NULL track rejected', 'PASS', v_err);
     ELSE
@@ -785,6 +898,8 @@ BEGIN
     v_passed := true;
   EXCEPTION WHEN OTHERS THEN
     v_err := SQLERRM;
+    -- Raised by submit_project(uuid) in 20261031000000_submission_window.sql:
+    -- RAISE EXCEPTION 'Submission window has not opened yet';
     IF v_err LIKE '%Submission window has not opened yet%' THEN
       INSERT INTO test_results (test_name, status, details) VALUES ('11d. submit before window opens rejected', 'PASS', v_err);
     ELSE
@@ -802,6 +917,8 @@ BEGIN
     v_passed := true;
   EXCEPTION WHEN OTHERS THEN
     v_err := SQLERRM;
+    -- Raised by submit_project(uuid) in 20261031000000_submission_window.sql:
+    -- RAISE EXCEPTION 'Submission deadline has passed';
     IF v_err LIKE '%Submission deadline has passed%' THEN
       INSERT INTO test_results (test_name, status, details) VALUES ('11e. submit after deadline rejected', 'PASS', v_err);
     ELSE
@@ -810,6 +927,44 @@ BEGIN
   END;
   IF v_passed THEN
     INSERT INTO test_results (test_name, status, details) VALUES ('11e. submit after deadline rejected', 'FAIL', 'Succeeded unexpectedly');
+  END IF;
+
+  -- 11f. Submission window opens is NULL
+  v_passed := false;
+  BEGIN
+    PERFORM public.submit_project(v_sub_null_opens_id);
+    v_passed := true;
+  EXCEPTION WHEN OTHERS THEN
+    v_err := SQLERRM;
+    -- Raised by submit_project(uuid) in 20261031000000_submission_window.sql:
+    -- RAISE EXCEPTION 'Submission window is not configured';
+    IF v_err LIKE '%Submission window is not configured%' THEN
+      INSERT INTO test_results (test_name, status, details) VALUES ('11f. submit NULL submission_opens_at rejected', 'PASS', v_err);
+    ELSE
+      INSERT INTO test_results (test_name, status, details) VALUES ('11f. submit NULL submission_opens_at rejected', 'FAIL', 'Unexpected: ' || v_err);
+    END IF;
+  END;
+  IF v_passed THEN
+    INSERT INTO test_results (test_name, status, details) VALUES ('11f. submit NULL submission_opens_at rejected', 'FAIL', 'Succeeded unexpectedly');
+  END IF;
+
+  -- 11g. Submission deadline is NULL
+  v_passed := false;
+  BEGIN
+    PERFORM public.submit_project(v_sub_null_dl_id);
+    v_passed := true;
+  EXCEPTION WHEN OTHERS THEN
+    v_err := SQLERRM;
+    -- Raised by submit_project(uuid) in 20261031000000_submission_window.sql:
+    -- RAISE EXCEPTION 'Submission window is not configured';
+    IF v_err LIKE '%Submission window is not configured%' THEN
+      INSERT INTO test_results (test_name, status, details) VALUES ('11g. submit NULL submission_deadline_at rejected', 'PASS', v_err);
+    ELSE
+      INSERT INTO test_results (test_name, status, details) VALUES ('11g. submit NULL submission_deadline_at rejected', 'FAIL', 'Unexpected: ' || v_err);
+    END IF;
+  END;
+  IF v_passed THEN
+    INSERT INTO test_results (test_name, status, details) VALUES ('11g. submit NULL submission_deadline_at rejected', 'FAIL', 'Succeeded unexpectedly');
   END IF;
 END $$;
 
@@ -842,6 +997,8 @@ BEGIN
     v_passed := true;
   EXCEPTION WHEN OTHERS THEN
     v_err := SQLERRM;
+    -- Raised by submit_project(uuid) in 20261031000000_submission_window.sql:
+    -- RAISE EXCEPTION 'Only the team leader can submit the project';
     IF v_err LIKE '%Only the team leader can submit the project%' THEN
       INSERT INTO test_results (test_name, status, details) VALUES ('12a. member submit rejected', 'PASS', v_err);
     ELSE
@@ -873,6 +1030,8 @@ BEGIN
     v_passed := true;
   EXCEPTION WHEN OTHERS THEN
     v_err := SQLERRM;
+    -- Raised by submit_project(uuid) in 20261031000000_submission_window.sql:
+    -- RAISE EXCEPTION 'Project has already been submitted';
     IF v_err LIKE '%has already been submitted%' THEN
       INSERT INTO test_results (test_name, status, details) VALUES ('12c. re-submit rejected', 'PASS', v_err);
     ELSE
@@ -944,6 +1103,8 @@ BEGIN
     v_passed := true;
   EXCEPTION WHEN OTHERS THEN
     v_err := SQLERRM;
+    -- Blocked by RLS policy submission_files_insert in 20260927000001_fix_submission_files_rls.sql:
+    -- WITH CHECK (EXISTS (SELECT 1 FROM submissions s WHERE s.id = submission_files.submission_id AND s.status = 'draft'))
     IF v_err LIKE '%violates row-level security policy%' THEN
       INSERT INTO test_results (test_name, status, details) VALUES ('13c. post-submit file insert rejected', 'PASS', v_err);
     ELSE
@@ -991,6 +1152,8 @@ BEGIN
     v_passed := true;
   EXCEPTION WHEN OTHERS THEN
     v_err := SQLERRM;
+    -- Blocked by RLS policy evaluations_insert_assigned_track in 20261001000000_hardening.sql:
+    -- WITH CHECK (auth.uid() = judge_id AND EXISTS (SELECT 1 FROM submissions s JOIN judge_assignments ja ON ja.track = s.track WHERE s.id = submission_id AND ja.judge_id = auth.uid()))
     IF v_err LIKE '%violates row-level security policy%' THEN
       INSERT INTO test_results (test_name, status, details) VALUES ('14b. cross-track evaluation INSERT rejected', 'PASS', v_err);
     ELSE
@@ -1028,6 +1191,8 @@ BEGIN
     v_passed := true;
   EXCEPTION WHEN OTHERS THEN
     v_err := SQLERRM;
+    -- Raised by finalize_evaluation(uuid) in 20261031000000_submission_window.sql:
+    -- RAISE EXCEPTION 'All criteria must be scored before finalizing (missing: %)', ...;
     IF v_err LIKE '%All criteria must be scored before finalizing%' THEN
       INSERT INTO test_results (test_name, status, details) VALUES ('15a. finalize with missing criteria rejected', 'PASS', v_err);
     ELSE
@@ -1051,6 +1216,8 @@ BEGIN
     v_passed := true;
   EXCEPTION WHEN OTHERS THEN
     v_err := SQLERRM;
+    -- Raised by finalize_evaluation(uuid) in 20261031000000_submission_window.sql:
+    -- RAISE EXCEPTION 'All criteria must be scored before finalizing (missing: %)', ...;
     IF v_err LIKE '%All criteria must be scored before finalizing%' THEN
       INSERT INTO test_results (test_name, status, details) VALUES ('15b. finalize with empty scores {} rejected', 'PASS', v_err);
     ELSE
@@ -1064,22 +1231,31 @@ END $$;
 
 
 -- ============================================================================
--- TEST 16: finalize_evaluation JUDGING TIMING WINDOW CHECKS
+-- TEST 16: finalize_evaluation JUDGING TIMING WINDOW & TRACK ASSIGNMENT CHECKS
 -- ============================================================================
 RESET ROLE;
 DO $$
 DECLARE
   v_eval_jf_id uuid;
   v_eval_jp_id uuid;
+  v_eval_null_judge_id uuid;
+  v_eval_del_ja_id uuid;
   v_judge_ai_id uuid;
+  v_judge_del_id uuid;
   v_claims text;
+  v_claims_del text;
   v_err text;
   v_passed boolean := false;
 BEGIN
   SELECT val INTO v_eval_jf_id FROM temp_test_fixtures WHERE key = 'eval_jf_id';
   SELECT val INTO v_eval_jp_id FROM temp_test_fixtures WHERE key = 'eval_jp_id';
+  SELECT val INTO v_eval_null_judge_id FROM temp_test_fixtures WHERE key = 'eval_null_judge_id';
+  SELECT val INTO v_eval_del_ja_id FROM temp_test_fixtures WHERE key = 'eval_del_ja_id';
   SELECT val INTO v_judge_ai_id FROM temp_test_fixtures WHERE key = 'judge_ai_id';
+  SELECT val INTO v_judge_del_id FROM temp_test_fixtures WHERE key = 'judge_del_id';
+
   v_claims := '{"sub": "' || v_judge_ai_id || '", "role": "authenticated"}';
+  v_claims_del := '{"sub": "' || v_judge_del_id || '", "role": "authenticated"}';
 
   EXECUTE 'SET LOCAL ROLE authenticated';
   EXECUTE 'SET LOCAL "request.jwt.claims" TO ''' || v_claims || '''';
@@ -1090,6 +1266,8 @@ BEGIN
     v_passed := true;
   EXCEPTION WHEN OTHERS THEN
     v_err := SQLERRM;
+    -- Raised by finalize_evaluation(uuid) in 20261031000000_submission_window.sql:
+    -- RAISE EXCEPTION 'Judging period has not started yet';
     IF v_err LIKE '%Judging period has not started yet%' THEN
       INSERT INTO test_results (test_name, status, details) VALUES ('16a. finalize before judging_starts_at rejected', 'PASS', v_err);
     ELSE
@@ -1107,6 +1285,8 @@ BEGIN
     v_passed := true;
   EXCEPTION WHEN OTHERS THEN
     v_err := SQLERRM;
+    -- Raised by finalize_evaluation(uuid) in 20261031000000_submission_window.sql:
+    -- RAISE EXCEPTION 'Judging window has closed';
     IF v_err LIKE '%Judging window has closed%' THEN
       INSERT INTO test_results (test_name, status, details) VALUES ('16b. finalize after judging_ends_at rejected', 'PASS', v_err);
     ELSE
@@ -1115,6 +1295,48 @@ BEGIN
   END;
   IF v_passed THEN
     INSERT INTO test_results (test_name, status, details) VALUES ('16b. finalize after judging_ends_at rejected', 'FAIL', 'Succeeded unexpectedly');
+  END IF;
+
+  -- 16c. Judging window dates NULL
+  v_passed := false;
+  BEGIN
+    PERFORM public.finalize_evaluation(v_eval_null_judge_id);
+    v_passed := true;
+  EXCEPTION WHEN OTHERS THEN
+    v_err := SQLERRM;
+    -- Raised by finalize_evaluation(uuid) in 20261031000000_submission_window.sql:
+    -- RAISE EXCEPTION 'Judging window is not configured';
+    IF v_err LIKE '%Judging window is not configured%' THEN
+      INSERT INTO test_results (test_name, status, details) VALUES ('16c. finalize with judging dates NULL rejected', 'PASS', v_err);
+    ELSE
+      INSERT INTO test_results (test_name, status, details) VALUES ('16c. finalize with judging dates NULL rejected', 'FAIL', 'Unexpected: ' || v_err);
+    END IF;
+  END;
+  IF v_passed THEN
+    INSERT INTO test_results (test_name, status, details) VALUES ('16c. finalize with judging dates NULL rejected', 'FAIL', 'Succeeded unexpectedly');
+  END IF;
+
+  -- 16d. Judge whose assignment was deleted / unassigned track
+  RESET ROLE;
+  EXECUTE 'SET LOCAL ROLE authenticated';
+  EXECUTE 'SET LOCAL "request.jwt.claims" TO ''' || v_claims_del || '''';
+
+  v_passed := false;
+  BEGIN
+    PERFORM public.finalize_evaluation(v_eval_del_ja_id);
+    v_passed := true;
+  EXCEPTION WHEN OTHERS THEN
+    v_err := SQLERRM;
+    -- Raised by finalize_evaluation(uuid) in 20261031000000_submission_window.sql:
+    -- RAISE EXCEPTION 'You are not assigned to this track';
+    IF v_err LIKE '%You are not assigned to this track%' THEN
+      INSERT INTO test_results (test_name, status, details) VALUES ('16d. finalize by judge with deleted assignment rejected', 'PASS', v_err);
+    ELSE
+      INSERT INTO test_results (test_name, status, details) VALUES ('16d. finalize by judge with deleted assignment rejected', 'FAIL', 'Unexpected: ' || v_err);
+    END IF;
+  END;
+  IF v_passed THEN
+    INSERT INTO test_results (test_name, status, details) VALUES ('16d. finalize by judge with deleted assignment rejected', 'FAIL', 'Succeeded unexpectedly');
   END IF;
 END $$;
 
@@ -1227,6 +1449,8 @@ BEGIN
     v_passed := true;
   EXCEPTION WHEN OTHERS THEN
     v_err := SQLERRM;
+    -- Raised by finalize_evaluation(uuid) in 20261031000000_submission_window.sql:
+    -- RAISE EXCEPTION 'Evaluation has already been finalized';
     IF v_err LIKE '%Evaluation has already been finalized%' THEN
       INSERT INTO test_results (test_name, status, details) VALUES ('18c. re-finalizing evaluation rejected', 'PASS', v_err);
     ELSE
@@ -1238,6 +1462,445 @@ BEGIN
   END IF;
 END $$;
 
+
+-- ============================================================================
+-- TEST 19: ADMIN_UPDATE_EVENT_DATES PERMISSIONS & VALIDATION
+-- ============================================================================
+-- 19a. Anon calling admin_update_event_dates -> REJECTED
+RESET ROLE;
+DO $$
+DECLARE
+  v_event_id uuid;
+  v_err text;
+  v_passed boolean := false;
+BEGIN
+  SELECT val INTO v_event_id FROM temp_test_fixtures WHERE key = 'event_id';
+
+  RESET "request.jwt.claims";
+  EXECUTE 'SET LOCAL ROLE anon';
+
+  BEGIN
+    PERFORM public.admin_update_event_dates(
+      v_event_id,
+      now() + interval '1 day',
+      now() + interval '2 days',
+      now() + interval '3 days',
+      now() + interval '4 days'
+    );
+    v_passed := true;
+  EXCEPTION WHEN OTHERS THEN
+    v_err := SQLERRM;
+    -- Blocked by Postgres privilege check: REVOKE EXECUTE ON FUNCTION public.admin_update_event_dates FROM PUBLIC, anon in 20261031000001_admin_event_settings.sql
+    IF v_err LIKE '%permission denied%' THEN
+      INSERT INTO test_results (test_name, status, details) VALUES ('19a. anon call to admin_update_event_dates rejected', 'PASS', v_err);
+    ELSE
+      INSERT INTO test_results (test_name, status, details) VALUES ('19a. anon call to admin_update_event_dates rejected', 'FAIL', 'Unexpected: ' || v_err);
+    END IF;
+  END;
+  IF v_passed THEN
+    INSERT INTO test_results (test_name, status, details) VALUES ('19a. anon call to admin_update_event_dates rejected', 'FAIL', 'Succeeded unexpectedly');
+  END IF;
+END $$;
+
+-- 19b. Participant calling admin_update_event_dates -> REJECTED
+RESET ROLE;
+DO $$
+DECLARE
+  v_event_id uuid;
+  v_leader_id uuid;
+  v_claims text;
+  v_err text;
+  v_passed boolean := false;
+BEGIN
+  SELECT val INTO v_event_id FROM temp_test_fixtures WHERE key = 'event_id';
+  SELECT val INTO v_leader_id FROM temp_test_fixtures WHERE key = 'leader_id';
+  v_claims := '{"sub": "' || v_leader_id || '", "role": "authenticated"}';
+
+  EXECUTE 'SET LOCAL ROLE authenticated';
+  EXECUTE 'SET LOCAL "request.jwt.claims" TO ''' || v_claims || '''';
+
+  BEGIN
+    PERFORM public.admin_update_event_dates(
+      v_event_id,
+      now() + interval '1 day',
+      now() + interval '2 days',
+      now() + interval '3 days',
+      now() + interval '4 days'
+    );
+    v_passed := true;
+  EXCEPTION WHEN OTHERS THEN
+    v_err := SQLERRM;
+    -- Raised by admin_update_event_dates() in 20261031000001_admin_event_settings.sql:
+    -- RAISE EXCEPTION 'Admin only';
+    IF v_err LIKE '%Admin only%' THEN
+      INSERT INTO test_results (test_name, status, details) VALUES ('19b. participant call to admin_update_event_dates rejected', 'PASS', v_err);
+    ELSE
+      INSERT INTO test_results (test_name, status, details) VALUES ('19b. participant call to admin_update_event_dates rejected', 'FAIL', 'Unexpected: ' || v_err);
+    END IF;
+  END;
+  IF v_passed THEN
+    INSERT INTO test_results (test_name, status, details) VALUES ('19b. participant call to admin_update_event_dates rejected', 'FAIL', 'Succeeded unexpectedly');
+  END IF;
+END $$;
+
+-- 19c-19f. Admin validation and successful update
+RESET ROLE;
+DO $$
+DECLARE
+  v_event_id uuid;
+  v_admin_id uuid;
+  v_claims text;
+  v_err text;
+  v_passed boolean := false;
+  v_count integer;
+  v_updated_deadline timestamptz;
+BEGIN
+  SELECT val INTO v_event_id FROM temp_test_fixtures WHERE key = 'event_id';
+  SELECT val INTO v_admin_id FROM temp_test_fixtures WHERE key = 'admin_id';
+  v_claims := '{"sub": "' || v_admin_id || '", "role": "authenticated"}';
+
+  EXECUTE 'SET LOCAL ROLE authenticated';
+  EXECUTE 'SET LOCAL "request.jwt.claims" TO ''' || v_claims || '''';
+
+  -- 19c. Admin call with deadline <= opens -> REJECTED
+  BEGIN
+    PERFORM public.admin_update_event_dates(
+      v_event_id,
+      now() + interval '5 days',
+      now() + interval '2 days',
+      now() + interval '6 days',
+      now() + interval '7 days'
+    );
+    v_passed := true;
+  EXCEPTION WHEN OTHERS THEN
+    v_err := SQLERRM;
+    -- Raised by admin_update_event_dates() in 20261031000001_admin_event_settings.sql:
+    -- RAISE EXCEPTION 'Submission deadline (%) must be after submission opens (%). Change submission deadline or submission opens.', ...;
+    IF v_err LIKE '%must be after submission opens%' THEN
+      INSERT INTO test_results (test_name, status, details) VALUES ('19c. admin update deadline <= opens rejected', 'PASS', v_err);
+    ELSE
+      INSERT INTO test_results (test_name, status, details) VALUES ('19c. admin update deadline <= opens rejected', 'FAIL', 'Unexpected: ' || v_err);
+    END IF;
+  END;
+  IF v_passed THEN
+    INSERT INTO test_results (test_name, status, details) VALUES ('19c. admin update deadline <= opens rejected', 'FAIL', 'Succeeded unexpectedly');
+  END IF;
+
+  -- 19d. Admin call with judging_starts < deadline -> REJECTED
+  v_passed := false;
+  BEGIN
+    PERFORM public.admin_update_event_dates(
+      v_event_id,
+      now() + interval '1 day',
+      now() + interval '4 days',
+      now() + interval '3 days',
+      now() + interval '5 days'
+    );
+    v_passed := true;
+  EXCEPTION WHEN OTHERS THEN
+    v_err := SQLERRM;
+    -- Raised by admin_update_event_dates() in 20261031000001_admin_event_settings.sql:
+    -- RAISE EXCEPTION 'Judging start (%) cannot be before submission deadline (%). Change judging start or submission deadline.', ...;
+    IF v_err LIKE '%cannot be before submission deadline%' THEN
+      INSERT INTO test_results (test_name, status, details) VALUES ('19d. admin update judging_starts < deadline rejected', 'PASS', v_err);
+    ELSE
+      INSERT INTO test_results (test_name, status, details) VALUES ('19d. admin update judging_starts < deadline rejected', 'FAIL', 'Unexpected: ' || v_err);
+    END IF;
+  END;
+  IF v_passed THEN
+    INSERT INTO test_results (test_name, status, details) VALUES ('19d. admin update judging_starts < deadline rejected', 'FAIL', 'Succeeded unexpectedly');
+  END IF;
+
+  -- 19e. Admin call with NULL required date -> REJECTED
+  v_passed := false;
+  BEGIN
+    PERFORM public.admin_update_event_dates(
+      v_event_id,
+      now() + interval '1 day',
+      NULL,
+      now() + interval '3 days',
+      now() + interval '4 days'
+    );
+    v_passed := true;
+  EXCEPTION WHEN OTHERS THEN
+    v_err := SQLERRM;
+    -- Raised by admin_update_event_dates() in 20261031000001_admin_event_settings.sql:
+    -- RAISE EXCEPTION 'Submission deadline is required';
+    IF v_err LIKE '%Submission deadline is required%' THEN
+      INSERT INTO test_results (test_name, status, details) VALUES ('19e. admin update NULL required date rejected', 'PASS', v_err);
+    ELSE
+      INSERT INTO test_results (test_name, status, details) VALUES ('19e. admin update NULL required date rejected', 'FAIL', 'Unexpected: ' || v_err);
+    END IF;
+  END;
+  IF v_passed THEN
+    INSERT INTO test_results (test_name, status, details) VALUES ('19e. admin update NULL required date rejected', 'FAIL', 'Succeeded unexpectedly');
+  END IF;
+
+  -- 19f. Admin valid call -> Updates event and writes exactly one audit log row
+  -- Strengthened: verifies actor_id matches admin fixture, and details JSONB diff contains
+  -- old and new values for submission_deadline_at.
+  PERFORM public.admin_update_event_dates(
+    v_event_id,
+    now() - interval '1 day',
+    now() + interval '10 days',
+    now() + interval '11 days',
+    now() + interval '12 days',
+    now() + interval '13 days'
+  );
+
+  SELECT submission_deadline_at INTO v_updated_deadline
+  FROM public.events WHERE id = v_event_id;
+
+  SELECT count(*) INTO v_count
+  FROM public.admin_audit_log
+  WHERE target_id = v_event_id::text AND action = 'event_dates_updated';
+
+  DECLARE
+    v_audit_entry record;
+  BEGIN
+    SELECT * INTO v_audit_entry
+    FROM public.admin_audit_log
+    WHERE target_id = v_event_id::text AND action = 'event_dates_updated'
+    ORDER BY created_at DESC
+    LIMIT 1;
+
+    IF v_count = 1 
+       AND v_updated_deadline > now() + interval '9 days'
+       AND v_audit_entry.actor_id = v_admin_id
+       AND (v_audit_entry.details->'submission_deadline_at'->>'new') IS NOT NULL
+       AND (v_audit_entry.details->'submission_deadline_at'->>'old') IS NOT NULL THEN
+      INSERT INTO test_results (test_name, status, details) VALUES ('19f. admin valid update updates events and writes audit log', 'PASS', '1 audit row verified: actor_id matches admin, details contains old & new deadline');
+    ELSE
+      INSERT INTO test_results (test_name, status, details) VALUES ('19f. admin valid update updates events and writes audit log', 'FAIL', 'Count: ' || v_count || ', actor: ' || coalesce(v_audit_entry.actor_id::text, 'null') || ', details: ' || coalesce(v_audit_entry.details::text, 'null'));
+    END IF;
+  END;
+END $$;
+
+
+-- ============================================================================
+-- TEST 20: PARTICIPANT RLS ISOLATION ON ADMIN_AUDIT_LOG
+-- ============================================================================
+RESET ROLE;
+DO $$
+DECLARE
+  v_member_id uuid;
+  v_claims text;
+  v_count integer;
+  v_err text;
+  v_passed boolean := false;
+BEGIN
+  SELECT val INTO v_member_id FROM temp_test_fixtures WHERE key = 'member_id';
+  v_claims := '{"sub": "' || v_member_id || '", "role": "authenticated"}';
+
+  EXECUTE 'SET LOCAL ROLE authenticated';
+  EXECUTE 'SET LOCAL "request.jwt.claims" TO ''' || v_claims || '''';
+
+  -- 20a. Participant cannot SELECT admin_audit_log (RLS filters rows)
+  SELECT count(*) INTO v_count FROM public.admin_audit_log;
+  IF v_count = 0 THEN
+    INSERT INTO test_results (test_name, status, details) VALUES ('20a. participant cannot SELECT admin_audit_log', 'PASS', '0 rows returned via RLS');
+  ELSE
+    INSERT INTO test_results (test_name, status, details) VALUES ('20a. participant cannot SELECT admin_audit_log', 'FAIL', 'Participant saw audit rows: ' || v_count);
+  END IF;
+
+  -- 20b. Participant cannot direct INSERT into admin_audit_log
+  BEGIN
+    INSERT INTO public.admin_audit_log (action, target_type, target_id, details)
+    VALUES ('tamper', 'events', 'malicious', '{}'::jsonb);
+    v_passed := true;
+  EXCEPTION WHEN OTHERS THEN
+    v_err := SQLERRM;
+    -- Blocked by REVOKE ALL ON public.admin_audit_log FROM PUBLIC, anon, authenticated
+    -- in 20261031000001_admin_event_settings.sql (privilege check fails with 'permission denied for table admin_audit_log')
+    IF v_err LIKE '%permission denied%' OR v_err LIKE '%violates row-level security policy%' THEN
+      INSERT INTO test_results (test_name, status, details) VALUES ('20b. participant cannot INSERT into admin_audit_log', 'PASS', v_err);
+    ELSE
+      INSERT INTO test_results (test_name, status, details) VALUES ('20b. participant cannot INSERT into admin_audit_log', 'FAIL', 'Unexpected: ' || v_err);
+    END IF;
+  END;
+  IF v_passed THEN
+    INSERT INTO test_results (test_name, status, details) VALUES ('20b. participant cannot INSERT into admin_audit_log', 'FAIL', 'Succeeded unexpectedly');
+  END IF;
+END $$;
+
+
+-- ============================================================================
+-- TEST 21: SUBMIT_PROJECT AFTER DEADLINE EXTENDED AND AFTER DEADLINE MOVED TO PAST
+-- ============================================================================
+RESET ROLE;
+DO $$
+DECLARE
+  v_admin_id uuid;
+  v_leader_id uuid;
+  v_event_past_id uuid;
+  v_sub_past_id uuid;
+  v_claims_admin text;
+  v_claims_leader text;
+  v_sub_row record;
+  v_err text;
+  v_passed boolean := false;
+BEGIN
+  SELECT val INTO v_admin_id FROM temp_test_fixtures WHERE key = 'admin_id';
+  SELECT val INTO v_leader_id FROM temp_test_fixtures WHERE key = 'leader_id';
+  SELECT val INTO v_event_past_id FROM temp_test_fixtures WHERE key = 'event_past_id';
+  SELECT val INTO v_sub_past_id FROM temp_test_fixtures WHERE key = 'sub_past_id';
+
+  v_claims_admin := '{"sub": "' || v_admin_id || '", "role": "authenticated"}';
+  v_claims_leader := '{"sub": "' || v_leader_id || '", "role": "authenticated"}';
+
+  -- 21a. Admin extends deadline of v_event_past_id from past into future
+  EXECUTE 'SET LOCAL ROLE authenticated';
+  EXECUTE 'SET LOCAL "request.jwt.claims" TO ''' || v_claims_admin || '''';
+
+  PERFORM public.admin_update_event_dates(
+    v_event_past_id,
+    now() - interval '2 days',
+    now() + interval '5 days',
+    now() + interval '6 days',
+    now() + interval '7 days'
+  );
+
+  -- Leader now submits v_sub_past_id (previously failed due to deadline)
+  EXECUTE 'SET LOCAL ROLE authenticated';
+  EXECUTE 'SET LOCAL "request.jwt.claims" TO ''' || v_claims_leader || '''';
+
+  PERFORM public.submit_project(v_sub_past_id);
+
+  RESET ROLE;
+  SELECT * INTO v_sub_row FROM public.submissions WHERE id = v_sub_past_id;
+  IF v_sub_row.status = 'submitted' THEN
+    INSERT INTO test_results (test_name, status, details) VALUES ('21a. submit_project accepts project after deadline extended', 'PASS', 'Status is submitted');
+  ELSE
+    INSERT INTO test_results (test_name, status, details) VALUES ('21a. submit_project accepts project after deadline extended', 'FAIL', 'Status was: ' || v_sub_row.status);
+  END IF;
+
+  -- 21b. Admin now moves deadline of v_event_null_dl_id into the past
+  -- Read event_null_dl_id directly from temp_test_fixtures after RESET ROLE (bypassing RLS)
+  RESET ROLE;
+  SELECT val INTO v_event_past_id FROM temp_test_fixtures WHERE key = 'event_null_dl_id';
+  SELECT val INTO v_sub_past_id FROM temp_test_fixtures WHERE key = 'sub_null_dl_id';
+
+  EXECUTE 'SET LOCAL ROLE authenticated';
+  EXECUTE 'SET LOCAL "request.jwt.claims" TO ''' || v_claims_admin || '''';
+
+  PERFORM public.admin_update_event_dates(
+    v_event_past_id,
+    now() - interval '5 days',
+    now() - interval '1 hour',
+    now() + interval '1 day',
+    now() + interval '2 days'
+  );
+
+  -- Leader tries to submit -> REJECTED ('Submission deadline has passed')
+  EXECUTE 'SET LOCAL ROLE authenticated';
+  EXECUTE 'SET LOCAL "request.jwt.claims" TO ''' || v_claims_leader || '''';
+
+  BEGIN
+    PERFORM public.submit_project(v_sub_past_id);
+    v_passed := true;
+  EXCEPTION WHEN OTHERS THEN
+    v_err := SQLERRM;
+    -- Raised by submit_project(uuid) in 20261031000000_submission_window.sql:
+    -- RAISE EXCEPTION 'Submission deadline has passed';
+    IF v_err LIKE '%Submission deadline has passed%' THEN
+      INSERT INTO test_results (test_name, status, details) VALUES ('21b. submit_project rejects project after deadline moved to past', 'PASS', v_err);
+    ELSE
+      INSERT INTO test_results (test_name, status, details) VALUES ('21b. submit_project rejects project after deadline moved to past', 'FAIL', 'Unexpected: ' || v_err);
+    END IF;
+  END;
+  IF v_passed THEN
+    INSERT INTO test_results (test_name, status, details) VALUES ('21b. submit_project rejects project after deadline moved to past', 'FAIL', 'Succeeded unexpectedly');
+  END IF;
+END $$;
+
+
+-- ============================================================================
+-- TEST 22: PUBLIC.EVENTS RLS & PERMISSION RESTRICTIONS
+-- 22a. Anon can SELECT fixture event from public.events (landing page / countdown)
+-- 22b. Participant UPDATE on public.events changes 0 rows (RLS blocks modification)
+-- 22c. Anon UPDATE on public.events is rejected with permission denied
+-- ============================================================================
+RESET ROLE;
+DO $$
+DECLARE
+  v_event_id uuid;
+  v_member_id uuid;
+  v_claims_member text;
+  v_deadline_before timestamptz;
+  v_deadline_after timestamptz;
+  v_count integer;
+  v_rows_affected integer;
+  v_err text;
+  v_passed boolean := false;
+BEGIN
+  SELECT val INTO v_event_id FROM temp_test_fixtures WHERE key = 'event_id';
+  SELECT val INTO v_member_id FROM temp_test_fixtures WHERE key = 'member_id';
+  v_claims_member := '{"sub": "' || v_member_id || '", "role": "authenticated"}';
+
+  -- 22a. Anon can SELECT the fixture event from public.events
+  -- Policy: "events_select_all" in 20261031000001_admin_event_settings.sql
+  -- (FOR SELECT TO anon, authenticated USING (true))
+  RESET "request.jwt.claims";
+  SET LOCAL ROLE anon;
+
+  SELECT count(*) INTO v_count
+  FROM public.events
+  WHERE id = v_event_id;
+
+  IF v_count = 1 THEN
+    INSERT INTO test_results (test_name, status, details) VALUES ('22a. anon can SELECT fixture event', 'PASS', 'Anon successfully read fixture event');
+  ELSE
+    INSERT INTO test_results (test_name, status, details) VALUES ('22a. anon can SELECT fixture event', 'FAIL', 'Count was: ' || v_count);
+  END IF;
+
+  -- 22b. Participant UPDATE on public.events changes 0 rows
+  -- Policy: "events_admin_update" in 20261031000001_admin_event_settings.sql
+  -- (FOR UPDATE TO authenticated USING (public.is_admin())) -> non-admin filters to 0 rows
+  RESET ROLE;
+  SELECT submission_deadline_at INTO v_deadline_before FROM public.events WHERE id = v_event_id;
+
+  EXECUTE 'SET LOCAL ROLE authenticated';
+  EXECUTE 'SET LOCAL "request.jwt.claims" TO ''' || v_claims_member || '''';
+
+  UPDATE public.events
+  SET submission_deadline_at = now() + interval '100 days'
+  WHERE id = v_event_id;
+  GET DIAGNOSTICS v_rows_affected = ROW_COUNT;
+
+  RESET ROLE;
+  SELECT submission_deadline_at INTO v_deadline_after FROM public.events WHERE id = v_event_id;
+
+  IF v_rows_affected = 0 AND v_deadline_before = v_deadline_after THEN
+    INSERT INTO test_results (test_name, status, details) VALUES ('22b. participant UPDATE on public.events changes 0 rows', 'PASS', 'ROW_COUNT is 0 and deadline unchanged');
+  ELSE
+    INSERT INTO test_results (test_name, status, details) VALUES ('22b. participant UPDATE on public.events changes 0 rows', 'FAIL', 'Rows affected: ' || v_rows_affected);
+  END IF;
+
+  -- 22c. Anon UPDATE on public.events is rejected (permission denied)
+  -- Privilege: REVOKE ALL ON public.events FROM anon; GRANT SELECT ON public.events TO anon;
+  -- in 20261031000001_admin_event_settings.sql
+  RESET "request.jwt.claims";
+  SET LOCAL ROLE anon;
+
+  v_passed := false;
+  BEGIN
+    UPDATE public.events
+    SET submission_deadline_at = now() + interval '100 days'
+    WHERE id = v_event_id;
+    v_passed := true;
+  EXCEPTION WHEN OTHERS THEN
+    v_err := SQLERRM;
+    -- Raised by Postgres privilege system: 'permission denied for table events'
+    IF v_err LIKE '%permission denied%' THEN
+      INSERT INTO test_results (test_name, status, details) VALUES ('22c. anon UPDATE on public.events is rejected', 'PASS', v_err);
+    ELSE
+      INSERT INTO test_results (test_name, status, details) VALUES ('22c. anon UPDATE on public.events is rejected', 'FAIL', 'Unexpected: ' || v_err);
+    END IF;
+  END;
+  IF v_passed THEN
+    INSERT INTO test_results (test_name, status, details) VALUES ('22c. anon UPDATE on public.events is rejected', 'FAIL', 'Succeeded unexpectedly');
+  END IF;
+END $$;
 
 -- ============================================================================
 -- SUMMARY & TEARDOWN VIA FORCED EXCEPTION

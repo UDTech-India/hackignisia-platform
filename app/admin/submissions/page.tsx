@@ -41,60 +41,60 @@ type Submission = {
 const initialSubmissions: Submission[] = [
   {
     id: "SUB-001",
-    team: "Team Vector",
-    teamCode: "VX7K29",
-    leader: "Aman Pathak",
+    team: "Team Name 1",
+    teamCode: "TM1K29",
+    leader: "Participant Name 1",
     track: "AI & Machine Learning",
-    title: "AI Powered Emergency Intelligence Platform",
-    submittedAt: "18 Aug 2026, 08:42 PM",
+    title: "Project Title 1",
+    submittedAt: "TBA",
     status: "Submitted",
     members: 4,
     score: null,
   },
   {
     id: "SUB-002",
-    team: "Code Titans",
-    teamCode: "CT82LM",
-    leader: "Rahul Sharma",
-    track: "Web & Full Stack",
-    title: "Smart Community Management Platform",
-    submittedAt: "18 Aug 2026, 06:21 PM",
+    team: "Team Name 2",
+    teamCode: "TM2P42",
+    leader: "Participant Name 5",
+    track: "Web & App Development",
+    title: "Project Title 2",
+    submittedAt: "TBA",
     status: "Under Review",
     members: 5,
     score: 82,
   },
   {
     id: "SUB-003",
-    team: "ByteForce",
-    teamCode: "BF73QK",
-    leader: "Priya Singh",
-    track: "AI & Machine Learning",
-    title: "AI Assisted Learning Companion",
-    submittedAt: "17 Aug 2026, 11:05 PM",
+    team: "Team Name 3",
+    teamCode: "TM3M81",
+    leader: "Participant Name 8",
+    track: "Social Impact & Innovation",
+    title: "Project Title 3",
+    submittedAt: "TBA",
     status: "Submitted",
     members: 4,
     score: null,
   },
   {
     id: "SUB-004",
-    team: "Innovators",
-    teamCode: "IN45PX",
-    leader: "Arjun Mehta",
-    track: "Social Impact",
-    title: "Accessible Digital Services",
-    submittedAt: "17 Aug 2026, 09:14 PM",
+    team: "Team Name 4",
+    teamCode: "TM4R67",
+    leader: "Participant Name 13",
+    track: "Open Innovation",
+    title: "Project Title 4",
+    submittedAt: "TBA",
     status: "Needs Changes",
     members: 3,
     score: 61,
   },
   {
     id: "SUB-005",
-    team: "TechNova",
-    teamCode: "TN91ZA",
-    leader: "Neha Verma",
-    track: "Web & Full Stack",
-    title: "Campus Collaboration Network",
-    submittedAt: "16 Aug 2026, 07:32 PM",
+    team: "Team Name 5",
+    teamCode: "TM5Q34",
+    leader: "Participant Name 17",
+    track: "Web & App Development",
+    title: "Project Title 5",
+    submittedAt: "TBA",
     status: "Draft",
     members: 5,
     score: null,
@@ -301,6 +301,11 @@ export default function AdminSubmissionsPage() {
         {/* CONTENT */}
 
         <div className="mx-auto max-w-[1500px] px-4 py-8 sm:px-6 lg:px-10 lg:py-10">
+          {/* DEMO DATA BANNER */}
+          <div className="mb-6 rounded-2xl border border-amber-500/30 bg-amber-500/10 p-4 text-xs font-medium text-amber-300">
+            Demo data. Not connected to the database yet.
+          </div>
+
           {/* PAGE INTRO */}
 
           <section className="mb-8">
@@ -757,7 +762,7 @@ export default function AdminSubmissionsPage() {
 
                 <p className="mt-3 text-xs leading-6 text-zinc-600">
                   Backend submission data and judge
-                  evaluation will be connected by Anusha
+                  evaluation will be connected
                   through Supabase.
                 </p>
 
