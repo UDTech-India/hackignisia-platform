@@ -133,7 +133,7 @@ export const siteFAQs: FAQItem[] = [
     id: "faq-3",
     question: "What are the hackathon tracks?",
     answer:
-      "The hackathon features four core tracks: AI & Machine Learning, Web & App Development, Social Impact & Innovation, and Open Innovation.",
+      "The hackathon features four core tracks: AI & Machine Learning, Web & Full Stack, Smart Automation & IoT, and Social Impact & Sustainability.",
   },
   {
     id: "faq-4",
@@ -163,3 +163,4 @@ export const siteFAQs: FAQItem[] = [
     answer: "To be updated by the organizers.",
   },
 ];
+
